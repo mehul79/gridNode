@@ -13,8 +13,8 @@ export default function GithubLogin() {
 
   return (
     <div className="h-screen flex justify-center items-center">
-    <button onClick={login} className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer">
-      Login with GitHub
+    <button onClick={login} className="bg-yellow-400 text-black font-medium px-4 py-2 rounded cursor-pointer">
+      Login with Google
       </button>
     </div>
   );

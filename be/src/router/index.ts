@@ -1,11 +1,11 @@
 import { Router } from "express";
-import authRoutes from "./auth.routes";
-import jobRoutes from "./jobs.routes";
-import machineRoutes from "./machines.routes";
+import authRoutes from "../routes/auth.routes";
+import jobRoutes from "../routes/jobs.routes";
+import machineRoutes from "../routes/machines.routes";
 
 const router = Router();
 
-router.use("/auth", authRoutes);
+router.use("/check", authRoutes);
 router.use("/jobs", jobRoutes);
 router.use("/machines", machineRoutes);
 

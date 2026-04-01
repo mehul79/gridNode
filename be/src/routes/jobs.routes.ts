@@ -1,8 +1,13 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth";
-import { prisma } from "../lib/prisma";
+import { prisma } from "../lib/db";
 
 const router = Router();
+
+// GET /api/jobs
+router.get("/", (req, res) => {
+  res.json({message: "hi"})
+})
 
 // POST /api/jobs
 router.post("/", requireAuth, async (req, res) => {
