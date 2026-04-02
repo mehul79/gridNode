@@ -13,13 +13,15 @@ export type JobStatus =
   | "cancelled";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected";
+export type GpuVendor = "nvidia" | "amd" | "intel" | "other";
+export type CpuIntensity = "low" | "medium" | "high" | "critical";
 
 export interface User {
   id: string;
   name: string;
   email: string;
   image?: string;
-  role: string;
+  machineCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,6 +32,8 @@ export interface Machine {
   cpuTotal: number;
   memoryTotal: number;
   gpuTotal: number;
+  gpuMemoryTotal: number | null;
+  gpuVendor: GpuVendor | null;
   status: string;
   lastHeartbeatAt: string | null;
   createdAt: string;
@@ -81,9 +85,14 @@ export interface Job {
   command: string | null;
   notebookPath: string | null;
   datasetUri: string | null;
+  kaggleDatasetUrl: string | null;
   cpuRequired: number;
   memoryRequired: number;
   gpuRequired: number;
+  gpuMemoryRequired: number | null;
+  cpuIntensity: CpuIntensity | null;
+  estimatedDuration: number | null;
+  gpuVendor: GpuVendor | null;
   timeoutSeconds: number;
   status: JobStatus;
   requesterId: string;

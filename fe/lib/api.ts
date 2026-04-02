@@ -37,6 +37,8 @@ export async function registerMachine(data: {
   cpuTotal: number;
   memoryTotal: number;
   gpuTotal: number;
+  gpuVendor?: "nvidia" | "amd" | "intel" | "other";
+  gpuMemoryTotal?: number;
 }): Promise<MachineRegisterResponse> {
   return fetchApi<MachineRegisterResponse>("/api/machines/register", {
     method: "POST",
@@ -75,9 +77,15 @@ export async function createJob(data: {
   command?: string;
   notebookPath?: string;
   datasetUri?: string;
+  kaggleDatasetUrl?: string;
   cpuRequired: number;
   memoryRequired: number;
   gpuRequired: number;
+  gpuMemoryRequired?: number;
+  gpuVendor?: "nvidia" | "amd" | "intel" | "other";
+  cpuIntensity?: "low" | "medium" | "high" | "critical";
+  estimatedDuration?: number;
+  machineId: string;
   timeoutSeconds?: number;
 }): Promise<Job> {
   return fetchApi<Job>("/api/jobs", {
@@ -140,12 +148,4 @@ export async function rejectJob(approvalId: string): Promise<Job> {
   return fetchApi<Job>(`/api/approvals/${approvalId}/reject`, {
     method: "POST",
   });
-}
-
-// Dev endpoint (temporary - only in development)
-export async function devSetRole(role: "owner" | "requester"): Promise<{ success: boolean }> {
-  if (process.env.NODE_ENV !== "development") {
-    throw new Error("Dev endpoint only available in development");
-  }
-  return fetchApi(`/api/dev/set-role?role=${role}`, { method: "POST" });
 }

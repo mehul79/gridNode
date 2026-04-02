@@ -19,37 +19,34 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string>("requester");
-  const [roleLoaded, setRoleLoaded] = useState(false);
+  const [hasMachines, setHasMachines] = useState(false);
+  const [infoLoaded, setInfoLoaded] = useState(false);
 
   useEffect(() => {
     if (session) {
       fetch("http://localhost:3005/api/check/me", { credentials: "include" })
         .then((res) => res.json())
         .then((user) => {
-          const role = user?.role || "requester";
-          setUserRole(role);
-          setRoleLoaded(true);
+          setHasMachines(user?.machineCount ? user.machineCount > 0 : false);
+          setInfoLoaded(true);
         })
         .catch((err) => {
           console.error(err);
-          setRoleLoaded(true);
+          setInfoLoaded(true);
         });
     }
   }, [session]);
 
-  const isOwner = userRole === "owner" || userRole === "admin";
-
   useEffect(() => {
-    if (!roleLoaded) return;
-    if (!session || !isOwner) {
+    if (!infoLoaded) return;
+    if (!session || !hasMachines) {
       router.push("/");
       return;
     }
-    if (session && isOwner) {
+    if (session && hasMachines) {
       fetchApprovals();
     }
-  }, [session, isOwner, roleLoaded, router]);
+  }, [session, hasMachines, infoLoaded, router]);
 
   const fetchApprovals = useCallback(async () => {
     setLoading(true);
@@ -115,8 +112,13 @@ export default function ApprovalsPage() {
     );
   }
 
-  if (!isOwner) {
-    return null; // Should redirect
+  // The useEffect handles redirect for non-owners, but we also guard here
+  if (!hasMachines) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <p className="text-muted-foreground">Access denied. You need to own at least one machine to view approvals.</p>
+      </div>
+    );
   }
 
   return (
@@ -175,20 +177,48 @@ export default function ApprovalsPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-3 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
-                    <span className="text-muted-foreground">CPU:</span> {approval.job.cpuRequired}
+                    <span className="text-muted-foreground">CPU:</span> {approval.job.cpuRequired} cores
                   </div>
                   <div>
                     <span className="text-muted-foreground">RAM:</span> {approval.job.memoryRequired} MB
                   </div>
                   <div>
                     <span className="text-muted-foreground">GPU:</span> {approval.job.gpuRequired}
+                    {approval.job.gpuRequired > 0 && approval.job.gpuVendor && (
+                      <span> ({approval.job.gpuVendor}, {approval.job.gpuMemoryRequired}MB)</span>
+                    )}
                   </div>
                   <div>
                     <span className="text-muted-foreground">Timeout:</span> {Math.round(approval.job.timeoutSeconds / 60)}h
                   </div>
                 </div>
+
+                {(approval.job.cpuIntensity || approval.job.estimatedDuration) && (
+                  <div className="grid grid-cols-2 gap-4 text-sm pt-2 border-t">
+                    {approval.job.cpuIntensity && (
+                      <div>
+                        <span className="text-muted-foreground">CPU Intensity:</span>{" "}
+                        <Badge variant="outline" className="capitalize">{approval.job.cpuIntensity}</Badge>
+                      </div>
+                    )}
+                    {approval.job.estimatedDuration && (
+                      <div>
+                        <span className="text-muted-foreground">Est. Duration:</span> {approval.job.estimatedDuration}h
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {approval.job.kaggleDatasetUrl && (
+                  <div className="text-sm pt-2 border-t">
+                    <span className="font-medium">Kaggle Dataset:</span>{" "}
+                    <a href={approval.job.kaggleDatasetUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                      {approval.job.kaggleDatasetUrl}
+                    </a>
+                  </div>
+                )}
 
                 {approval.job.datasetUri && (
                   <div className="text-sm">

@@ -1,41 +1,34 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth";
-import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/db";
 
 const router = Router();
 
-// GET /api/check/me - returns full user with role
+// GET /api/check/me - returns user info with machine count
 router.get("/me", requireAuth, async (req, res) => {
   const sessionUser = (req as any).user;
-  const dbUser = await prisma.user.findUnique({
+  const userWithCount = await prisma.user.findUnique({
     where: { id: sessionUser.id },
-    select: { id: true, name: true, email: true, image: true, role: true, createdAt: true, updatedAt: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      createdAt: true,
+      updatedAt: true,
+      _count: { select: { machines: true } },
+    },
   });
-  if (!dbUser) return res.status(404).json({ error: "User not found" });
-  res.json(dbUser);
+  if (!userWithCount) return res.status(404).json({ error: "User not found" });
+  res.json({
+    id: userWithCount.id,
+    name: userWithCount.name,
+    email: userWithCount.email,
+    image: userWithCount.image,
+    createdAt: userWithCount.createdAt,
+    updatedAt: userWithCount.updatedAt,
+    machineCount: userWithCount._count.machines,
+  });
 });
-
-// Dev-only: set user role (for testing)
-if (process.env.NODE_ENV === "development") {
-  router.post("/dev/set-role", requireAuth, async (req, res) => {
-    const user = (req as any).user;
-    const role = String(req.query.role);
-    if (!role || !["owner", "requester", "admin"].includes(role)) {
-      return res.status(400).json({ error: "Invalid role. Use: owner, requester, admin" });
-    }
-    try {
-      const updated = await prisma.user.update({
-        where: { id: user.id },
-        data: { role } as Prisma.UserUpdateInput,
-      });
-      // Return minimal user info
-      res.json({ success: true, user: { id: updated.id, name: updated.name, email: updated.email, role: updated.role } });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Failed to update role" });
-    }
-  });
-}
 
 export default router;

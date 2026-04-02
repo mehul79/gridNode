@@ -213,22 +213,51 @@ export default function JobDetailPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
               <div>
                 <span className="font-medium">Resources:</span>
                 <ul className="text-sm text-muted-foreground list-disc list-inside">
                   <li>CPU: {job.cpuRequired} cores</li>
                   <li>Memory: {job.memoryRequired} MB</li>
-                  <li>GPU: {job.gpuRequired}</li>
+                  <li>
+                    GPU: {job.gpuRequired}
+                    {job.gpuRequired > 0 && job.gpuVendor && (
+                      <span> ({job.gpuVendor}, {job.gpuMemoryRequired}MB per GPU)</span>
+                    )}
+                  </li>
+                  {job.cpuIntensity && (
+                    <li>CPU Intensity: <Badge variant="outline" className="capitalize">{job.cpuIntensity}</Badge></li>
+                  )}
                 </ul>
               </div>
               <div>
-                <span className="font-medium">Timeouts:</span>
+                <span className="font-medium">Time Estimates:</span>
                 <ul className="text-sm text-muted-foreground list-disc list-inside">
-                  <li>{Math.round(job.timeoutSeconds / 60)} hours</li>
+                  <li>Timeout: {Math.round(job.timeoutSeconds / 60)} hours</li>
+                  {job.estimatedDuration && (
+                    <li>Estimated Duration: {job.estimatedDuration} hours</li>
+                  )}
                 </ul>
               </div>
             </div>
+
+            {(job.kaggleDatasetUrl || job.datasetUri) && (
+              <div className="pt-2 border-t">
+                <span className="font-medium">Datasets:</span>
+                <ul className="text-sm text-muted-foreground list-disc list-inside mt-1">
+                  {job.datasetUri && (
+                    <li>
+                      Dataset: <code className="bg-muted px-1 rounded">{job.datasetUri}</code>
+                    </li>
+                  )}
+                  {job.kaggleDatasetUrl && (
+                    <li>
+                      Kaggle: <a href={job.kaggleDatasetUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{job.kaggleDatasetUrl}</a>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
 
             <div className="text-sm text-muted-foreground pt-2 border-t">
               <div>Created: {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}</div>
@@ -254,7 +283,8 @@ export default function JobDetailPage() {
               <div>
                 <span className="font-medium">Machine:</span>
                 <div className="text-sm text-muted-foreground">
-                  {job.machine.id} (CPU: {job.machine.cpuTotal}, RAM: {job.machine.memoryTotal}MB, GPU: {job.machine.gpuTotal})
+                  {job.machine.id} (CPU: {job.machine.cpuTotal}, RAM: {job.machine.memoryTotal}MB, GPU: {job.machine.gpuTotal}
+                  {job.machine.gpuTotal > 0 && job.machine.gpuVendor && `, ${job.machine.gpuVendor} (${job.machine.gpuMemoryTotal}MB total)`})
                   {job.machine.lastHeartbeatAt && (
                     <div className="text-xs">
                       Last heartbeat: {formatDistanceToNow(new Date(job.machine.lastHeartbeatAt), { addSuffix: true })}

@@ -8,12 +8,14 @@ import { emitJobUpdate } from "../sockets";
 
 const router = Router();
 
-// GET /api/machines - list current user's machines
+// GET /api/machines - list current user's machines, or all machines if ?all=true
 router.get("/", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
+    const all = String(req.query.all) === "true";
+    const where = all ? {} : { ownerId: user.id };
     const machines = await prisma.machine.findMany({
-      where: { ownerId: user.id },
+      where,
       orderBy: { createdAt: "desc" },
     });
     res.json(machines);
@@ -28,7 +30,7 @@ router.post("/register", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
 
-    const { cpuTotal, memoryTotal, gpuTotal } = req.body;
+    const { cpuTotal, memoryTotal, gpuTotal, gpuVendor, gpuMemoryTotal } = req.body;
     if (
       cpuTotal == null ||
       memoryTotal == null ||
@@ -40,12 +42,24 @@ router.post("/register", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "cpuTotal, memoryTotal, gpuTotal are required numbers" });
     }
 
+    // If GPU count > 0, require vendor and memory total
+    if (gpuTotal > 0) {
+      if (!gpuVendor) {
+        return res.status(400).json({ error: "gpuVendor is required when GPU count > 0" });
+      }
+      if (gpuMemoryTotal == null || gpuMemoryTotal < 1024) {
+        return res.status(400).json({ error: "gpuMemoryTotal (MB, min 1024) is required when GPU count > 0" });
+      }
+    }
+
     const machine = await prisma.machine.create({
       data: {
         ownerId: user.id,
         cpuTotal,
         memoryTotal,
         gpuTotal,
+        gpuVendor: gpuVendor ?? null,
+        gpuMemoryTotal: gpuMemoryTotal ?? null,
       },
     });
 

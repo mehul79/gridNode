@@ -20,14 +20,16 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
-  const [userRole, setUserRole] = useState<string>("requester");
+  const [hasMachines, setHasMachines] = useState(false);
 
   useEffect(() => {
     if (session) {
       fetch("http://localhost:3005/api/check/me", { credentials: "include" })
         .then((res) => res.json())
         .then((user) => {
-          if (user?.role) setUserRole(user.role);
+          if (user?.machineCount && user.machineCount > 0) {
+            setHasMachines(true);
+          }
         })
         .catch(console.error);
     }
@@ -51,8 +53,8 @@ export default function Navbar() {
     { href: "/machines", label: "Machines", icon: Monitor },
   ];
 
-  // Filter approvals link for owners/admins only
-  const showApprovals = userRole === "owner" || userRole === "admin";
+  // Show Approvals link only for machine owners
+  const showApprovals = hasMachines;
 
   return (
     <nav className="border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -101,8 +103,8 @@ export default function Navbar() {
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium leading-none">{session.user.name}</p>
                 <p className="text-xs leading-none text-muted-foreground">{session.user.email}</p>
-                {userRole && (
-                  <p className="text-xs leading-none text-muted-foreground capitalize">Role: {userRole}</p>
+                {hasMachines && (
+                  <p className="text-xs leading-none text-muted-foreground">Machine Owner</p>
                 )}
               </div>
             </DropdownMenuLabel>

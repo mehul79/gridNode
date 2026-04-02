@@ -31,6 +31,8 @@ export default function MachinesPage() {
     cpuTotal: 2,
     memoryTotal: 4096,
     gpuTotal: 0,
+    gpuVendor: undefined as "nvidia" | "amd" | "intel" | "other" | undefined,
+    gpuMemoryTotal: 0,
   });
   const [showToken, setShowToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -158,11 +160,51 @@ export default function MachinesPage() {
                   type="number"
                   min={0}
                   value={newMachine.gpuTotal}
-                  onChange={(e) => setNewMachine({ ...newMachine, gpuTotal: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const gpuTotal = parseInt(e.target.value) || 0;
+                    setNewMachine({ ...newMachine, gpuTotal });
+                    // Reset GPU fields if no GPUs
+                    if (gpuTotal === 0) {
+                      setNewMachine(prev => ({ ...prev, gpuVendor: undefined, gpuMemoryTotal: 0 }));
+                    }
+                  }}
                   required
                 />
               </div>
             </div>
+
+            {/* GPU-specific fields - show only if GPU count > 0 */}
+            {newMachine.gpuTotal > 0 && (
+              <div className="grid grid-cols-2 gap-4 border-t pt-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">GPU Vendor *</label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={newMachine.gpuVendor || ""}
+                    onChange={(e) => setNewMachine({ ...newMachine, gpuVendor: e.target.value as "nvidia" | "amd" | "intel" | "other" })}
+                    required
+                  >
+                    <option value="" disabled>Select vendor</option>
+                    <option value="nvidia">NVIDIA</option>
+                    <option value="amd">AMD</option>
+                    <option value="intel">Intel</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">GPU Memory per GPU (MB) *</label>
+                  <Input
+                    type="number"
+                    min={1024}
+                    step={1024}
+                    value={newMachine.gpuMemoryTotal}
+                    onChange={(e) => setNewMachine({ ...newMachine, gpuMemoryTotal: parseInt(e.target.value) || 0 })}
+                    placeholder="e.g., 16384 for 16GB"
+                    required
+                  />
+                </div>
+              </div>
+            )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             {showToken && (
               <div className="p-4 bg-muted rounded-md space-y-2">
@@ -215,12 +257,20 @@ export default function MachinesPage() {
                   </div>
                   <CardDescription>
                     CPU: {machine.cpuTotal} • RAM: {machine.memoryTotal}MB • GPU: {machine.gpuTotal}
+                    {machine.gpuTotal > 0 && machine.gpuVendor && (
+                      <span> ({machine.gpuVendor}, {machine.gpuMemoryTotal}MB total)</span>
+                    )}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="text-sm">
                     <span className="font-medium">ID:</span> {machine.id.slice(0, 12)}...
                   </div>
+                  {machine.gpuTotal > 0 && machine.gpuVendor && (
+                    <div className="text-sm">
+                      <span className="font-medium">GPU:</span> {machine.gpuTotal}× {machine.gpuVendor} ({machine.gpuMemoryTotal}MB total)
+                    </div>
+                  )}
                   {machine.lastHeartbeatAt && (
                     <div className="text-sm">
                       <span className="font-medium">Last heartbeat:</span>{" "}

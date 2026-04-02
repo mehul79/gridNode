@@ -16,9 +16,9 @@ export async function requireOwnerOrAdmin(
   try {
     const user = await prisma.user.findUnique({
       where: { id: sessionUser.id },
-      select: { role: true, id: true },
+      select: { roles: true, id: true },
     });
-    if (!user || !OWNER_ROLES.has(user.role)) {
+    if (!user || !user.roles.some((role) => OWNER_ROLES.has(role))) {
       return res.status(403).json({ message: "Forbidden" });
     }
     (req as any).dbUser = user;
@@ -28,6 +28,10 @@ export async function requireOwnerOrAdmin(
   }
 }
 
-export function isOwnerOrAdminRole(role: string): boolean {
-  return OWNER_ROLES.has(role);
+export function hasRole(roles: string[], role: string): boolean {
+  return roles.includes(role);
+}
+
+export function isOwnerOrAdminRole(roles: string[]): boolean {
+  return roles.some((r) => OWNER_ROLES.has(r));
 }

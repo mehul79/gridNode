@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Briefcase, CheckSquare, Monitor, Plus } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
+import StatusBadge from "@/components/StatusBadge";
 
 export default function Dashboard() {
   const { data: session, isPending } = authClient.useSession();
   const router = useRouter();
   const [stats, setStats] = useState<{ jobs: number; pendingApprovals: number; machines: number }>({ jobs: 0, pendingApprovals: 0, machines: 0 });
-  const [role, setRole] = useState<string>("requester");
+  const [machineCount, setMachineCount] = useState<number>(0);
   const [jobs, setJobs] = useState<any[]>([]);
 
   useEffect(() => {
@@ -25,22 +26,22 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (session) {
-      // Fetch full user data (including role) from backend
-      const fetchUser = async () => {
-        try {
-          const res = await fetch("http://localhost:3005/api/check/me", { credentials: "include" });
-          if (res.ok) {
-            const user = await res.json();
-            setRole(user.role || "requester");
-          }
-        } catch (e) {
-          console.error("Failed to fetch user role", e);
-        }
-      };
-      fetchUser();
+      fetchUserInfo();
       fetchJobs();
     }
   }, [session]);
+
+  const fetchUserInfo = async () => {
+    try {
+      const res = await fetch("http://localhost:3005/api/check/me", { credentials: "include" });
+      if (res.ok) {
+        const user = await res.json();
+        setMachineCount(user.machineCount || 0);
+      }
+    } catch (e) {
+      console.error("Failed to fetch user info", e);
+    }
+  };
 
   const fetchJobs = async () => {
     try {
@@ -56,19 +57,8 @@ export default function Dashboard() {
 
   const pendingApprovalsCount = jobs.filter((j) => j.status === "pending_approval").length;
 
-  // Dev-only: set role
-  const devSetRole = async (newRole: "owner" | "requester") => {
-    try {
-      await fetch(`http://localhost:3005/api/dev/set-role?role=${newRole}`, {
-        method: "POST",
-        credentials: "include",
-      });
-      // Reload to update session
-      window.location.reload();
-    } catch (e) {
-      alert("Failed to switch role (dev only)");
-    }
-  };
+  // Derive primary role for display based on machine ownership
+  const primaryRole = machineCount > 0 ? "owner" : "requester";
 
   if (isPending) {
     return (
@@ -88,19 +78,12 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">
+          <div className="text-muted-foreground">
             Welcome back, {session.user.name}
-            <Badge variant="outline" className="ml-2 capitalize">{role}</Badge>
-          </p>
-        </div>
-        {/* Dev-only role switcher */}
-        {process.env.NODE_ENV === "development" && (
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-muted-foreground">Dev role:</span>
-            <Button size="sm" variant="outline" onClick={() => devSetRole("requester")}>Requester</Button>
-            <Button size="sm" variant="outline" onClick={() => devSetRole("owner")}>Owner</Button>
+            <Badge variant="outline" className="ml-2 capitalize">{primaryRole}</Badge>
+            <span className="ml-2 text-xs text-muted-foreground">Machines: {machineCount}</span>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -123,7 +106,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{pendingApprovalsCount}</div>
             <p className="text-xs text-muted-foreground">
-              {role === "owner" || role === "admin" ? "Requires your action" : "Waiting for owner"}
+              {primaryRole === "owner" || primaryRole === "admin" ? "Requires your action" : "Waiting for owner"}
             </p>
           </CardContent>
         </Card>
@@ -134,7 +117,7 @@ export default function Dashboard() {
             <Monitor className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">-</div>
+            <div className="text-2xl font-bold">{machineCount}</div>
             <p className="text-xs text-muted-foreground">View in Machines page</p>
           </CardContent>
         </Card>
@@ -170,38 +153,82 @@ export default function Dashboard() {
             {jobs.slice(0, 6).map((job) => (
               <Card key={job.id}>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base capitalize">{job.type}</CardTitle>
-                    <Badge variant={
-                      job.status === "pending_approval" ? "warning" :
-                      job.status === "approved" ? "success" :
-                      job.status === "rejected" ? "destructive" :
-                      job.status === "running" ? "info" :
-                      "outline"
-                    }>
-                      {job.status.replace(/_/g, " ")}
-                    </Badge>
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <CardTitle className="capitalize">{job.type}</CardTitle>
+                      <CardDescription className="truncate">{job.repoUrl}</CardDescription>
+                    </div>
+                    <StatusBadge status={job.status} />
                   </div>
-                  <CardDescription className="truncate">{job.repoUrl}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>
-                      <span className="text-muted-foreground">CPU:</span> {job.cpuRequired}
+                      <span className="text-muted-foreground">CPU:</span> {job.cpuRequired} cores
                     </div>
                     <div>
                       <span className="text-muted-foreground">RAM:</span> {job.memoryRequired} MB
                     </div>
                     <div>
                       <span className="text-muted-foreground">GPU:</span> {job.gpuRequired}
+                      {job.gpuRequired > 0 && job.gpuVendor && (
+                        <span className="text-xs block text-muted-foreground">
+                          {job.gpuVendor} ({job.gpuMemoryRequired}MB)
+                        </span>
+                      )}
                     </div>
                     <div>
                       <span className="text-muted-foreground">Timeout:</span> {Math.round(job.timeoutSeconds / 60)}h
                     </div>
                   </div>
-                  <Button asChild variant="secondary" size="sm" className="w-full mt-4">
-                    <Link href={`/jobs/${job.id}`}>View Details</Link>
-                  </Button>
+
+                  {job.cpuIntensity && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Intensity:</span> <Badge variant="outline" className="capitalize text-xs">{job.cpuIntensity}</Badge>
+                    </p>
+                  )}
+
+                  {job.notebookPath && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Notebook:</span> {job.notebookPath}
+                    </p>
+                  )}
+
+                  {job.command && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Command:</span>{" "}
+                      <code className="bg-muted px-1 rounded text-xs truncate block max-w-[200px]">{job.command}</code>
+                    </p>
+                  )}
+
+                  {job.kaggleDatasetUrl && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Kaggle:</span>{" "}
+                      <a href={job.kaggleDatasetUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs truncate block">
+                        {job.kaggleDatasetUrl}
+                      </a>
+                    </p>
+                  )}
+
+                  <div className="text-xs text-muted-foreground">
+                    Created {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <div className="text-sm">
+                      {job.logsCount > 0 && (
+                        <span className="text-muted-foreground">{job.logsCount} log lines</span>
+                      )}
+                      {job.artifactsCount > 0 && (
+                        <span className="ml-3 text-muted-foreground">{job.artifactsCount} artifacts</span>
+                      )}
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button asChild variant="secondary" size="sm" className="w-full mt-4">
+                        <Link href={`/jobs/${job.id}`}>View Details</Link>
+                      </Button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             ))}

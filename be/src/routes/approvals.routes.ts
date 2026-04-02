@@ -1,17 +1,21 @@
 import { Router } from "express";
 import { JobStatus, ApprovalStatus, Prisma } from "@prisma/client";
 import { requireAuth } from "../middleware/requireAuth";
-import { requireOwnerOrAdmin } from "../middleware/requireRole";
 import { prisma } from "../lib/db";
 import { emitJobUpdate } from "../sockets";
 
 const router = Router();
 
 // GET /api/approvals/pending
-router.get("/pending", requireAuth, requireOwnerOrAdmin, async (_req, res) => {
+// Returns pending approvals for jobs where the current user is the owner (ownerId matches)
+router.get("/pending", requireAuth, async (req, res) => {
   try {
+    const user = (req as any).user;
     const approvals = await prisma.approval.findMany({
-      where: { status: ApprovalStatus.pending },
+      where: {
+        status: ApprovalStatus.pending,
+        job: { ownerId: user.id },
+      },
       include: {
         job: {
           include: {
@@ -30,7 +34,7 @@ router.get("/pending", requireAuth, requireOwnerOrAdmin, async (_req, res) => {
 });
 
 // POST /api/approvals/:approvalId/approve
-router.post("/:approvalId/approve", requireAuth, requireOwnerOrAdmin, async (req, res) => {
+router.post("/:approvalId/approve", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const approvalId = String(req.params.approvalId);
@@ -45,6 +49,10 @@ router.post("/:approvalId/approve", requireAuth, requireOwnerOrAdmin, async (req
     }
     if (approval.job.status !== JobStatus.pending_approval) {
       return res.status(400).json({ error: "Job is not awaiting approval" });
+    }
+    // Check: only the job's owner can approve
+    if (approval.job.ownerId !== user.id) {
+      return res.status(403).json({ error: "Only the job owner can approve" });
     }
 
     await prisma.$transaction(async (tx) => {
@@ -88,7 +96,7 @@ router.post("/:approvalId/approve", requireAuth, requireOwnerOrAdmin, async (req
 });
 
 // POST /api/approvals/:approvalId/reject
-router.post("/:approvalId/reject", requireAuth, requireOwnerOrAdmin, async (req, res) => {
+router.post("/:approvalId/reject", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const approvalId = String(req.params.approvalId);
@@ -103,6 +111,10 @@ router.post("/:approvalId/reject", requireAuth, requireOwnerOrAdmin, async (req,
     }
     if (approval.job.status !== JobStatus.pending_approval) {
       return res.status(400).json({ error: "Job is not awaiting approval" });
+    }
+    // Check: only the job's owner can reject
+    if (approval.job.ownerId !== user.id) {
+      return res.status(403).json({ error: "Only the job owner can reject" });
     }
 
     await prisma.$transaction(async (tx) => {

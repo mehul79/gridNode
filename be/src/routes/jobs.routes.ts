@@ -5,7 +5,7 @@ import { requireAgentAuth } from "../middleware/requireAgentAuth";
 import { prisma } from "../lib/db";
 import { appendJobEvent } from "../lib/jobEvents";
 import { canStop } from "../lib/jobStatus";
-import { canViewJob, canStopJob, getUserRole, resolveStopTargetStatus } from "../lib/jobAccess";
+import { canViewJob, canStopJob, resolveStopTargetStatus } from "../lib/jobAccess";
 import { emitLog, emitJobUpdate } from "../sockets";
 
 const router = Router();
@@ -24,7 +24,6 @@ function parseLimit(raw: unknown, fallback: number, max: number): number {
 router.get("/", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
-    const role = await getUserRole(user.id);
     const statusParam = req.query.status as string | undefined;
 
     const statusFilter = statusParam
@@ -33,17 +32,14 @@ router.get("/", requireAuth, async (req, res) => {
         : undefined
       : undefined;
 
-    const where: Prisma.JobWhereInput =
-      role === "owner" || role === "admin"
-        ? {
-            OR: [
-              { requesterId: user.id },
-              { ownerId: user.id },
-              { machine: { ownerId: user.id } },
-              { status: JobStatus.pending_approval },
-            ],
-          }
-        : { requesterId: user.id };
+    // Users can view jobs where they are the requester, owner, or machine owner
+    const where: Prisma.JobWhereInput = {
+      OR: [
+        { requesterId: user.id },
+        { ownerId: user.id },
+        { machine: { ownerId: user.id } },
+      ],
+    };
 
     const jobs = await prisma.job.findMany({
       where: statusFilter ? { AND: [where, { status: statusFilter }] } : where,
@@ -73,10 +69,16 @@ router.post("/", requireAuth, async (req, res) => {
       command,
       notebookPath,
       datasetUri,
+      kaggleDatasetUrl,
       cpuRequired,
       memoryRequired,
       gpuRequired,
+      gpuMemoryRequired,
+      cpuIntensity,
+      estimatedDuration,
+      gpuVendor,
       timeoutSeconds,
+      machineId,
     } = req.body;
 
     if (!repoUrl || typeof repoUrl !== "string") {
@@ -93,12 +95,45 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "cpuRequired, memoryRequired, gpuRequired are required" });
     }
 
+    // Validate GPU requirements if GPU needed
+    if (gpuRequired > 0) {
+      if (gpuMemoryRequired == null || gpuMemoryRequired < 1024) {
+        return res.status(400).json({ error: "gpuMemoryRequired (MB, min 1024) is required when GPU count > 0" });
+      }
+      if (!gpuVendor) {
+        return res.status(400).json({ error: "gpuVendor is required when GPU count > 0" });
+      }
+    }
+
+    // Validate cpuIntensity if provided
+    if (cpuIntensity && !Object.values(JobStatus).includes(cpuIntensity)) {
+      // Actually need to check against CpuIntensity enum but JobStatus is wrong. Let's use a simple check
+      const validIntensities = ["low", "medium", "high", "critical"];
+      if (!validIntensities.includes(cpuIntensity)) {
+        return res.status(400).json({ error: "cpuIntensity must be one of: low, medium, high, critical" });
+      }
+    }
+
     const jobType = type === JobType.video ? JobType.video : JobType.notebook;
     if (jobType === JobType.notebook && (!notebookPath || typeof notebookPath !== "string")) {
       return res.status(400).json({ error: "notebookPath is required for notebook jobs" });
     }
     if (jobType === JobType.video && (!command || typeof command !== "string" || !command.trim())) {
       return res.status(400).json({ error: "command is required for video jobs" });
+    }
+
+    // If machineId is provided, set machine and derive owner from machine
+    let jobMachineId: string | null = machineId || null;
+    let jobOwnerId: string | null = null;
+    if (machineId) {
+      const machine = await prisma.machine.findUnique({
+        where: { id: machineId },
+        select: { ownerId: true },
+      });
+      if (!machine) {
+        return res.status(400).json({ error: "Invalid machineId: machine not found" });
+      }
+      jobOwnerId = machine.ownerId;
     }
 
     const job = await prisma.job.create({
@@ -109,19 +144,33 @@ router.post("/", requireAuth, async (req, res) => {
         command: command ?? null,
         notebookPath: notebookPath ?? null,
         datasetUri: datasetUri ?? null,
+        kaggleDatasetUrl: kaggleDatasetUrl ?? null,
         cpuRequired,
         memoryRequired,
         gpuRequired,
+        gpuMemoryRequired: gpuMemoryRequired ?? null,
+        cpuIntensity: cpuIntensity ?? null,
+        estimatedDuration: estimatedDuration ?? null,
+        gpuVendor: gpuVendor ?? null,
         timeoutSeconds:
           typeof timeoutSeconds === "number" && timeoutSeconds > 0 ? timeoutSeconds : 3600,
         status: JobStatus.pending_approval,
+        machineId: jobMachineId,
+        ownerId: jobOwnerId,
         approval: {
           create: { status: ApprovalStatus.pending },
         },
         events: {
           create: {
             type: "job_created",
-            payload: { repoUrl, type: jobType } as Prisma.InputJsonValue,
+            payload: {
+              repoUrl,
+              type: jobType,
+              machineId: jobMachineId,
+              gpuRequired,
+              gpuMemoryRequired,
+              gpuVendor,
+            } as Prisma.InputJsonValue,
             actorId: user.id,
           },
         },
@@ -146,14 +195,13 @@ router.get("/:id/logs", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const id = paramId(req);
-    const role = await getUserRole(user.id);
 
     const job = await prisma.job.findUnique({
       where: { id },
       include: { machine: true },
     });
     if (!job) return res.status(404).json({ error: "Job not found" });
-    if (!(await canViewJob(user.id, role, job))) {
+    if (!(await canViewJob(user.id, job))) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
@@ -237,14 +285,13 @@ router.get("/:id/artifacts", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const id = paramId(req);
-    const role = await getUserRole(user.id);
 
     const job = await prisma.job.findUnique({
       where: { id },
       include: { machine: true },
     });
     if (!job) return res.status(404).json({ error: "Job not found" });
-    if (!(await canViewJob(user.id, role, job))) {
+    if (!(await canViewJob(user.id, job))) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
@@ -309,14 +356,13 @@ router.post("/:id/stop", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const id = paramId(req);
-    const role = await getUserRole(user.id);
 
     const job = await prisma.job.findUnique({
       where: { id },
       include: { machine: true },
     });
     if (!job) return res.status(404).json({ error: "Job not found" });
-    if (!(await canStopJob(user.id, role, job))) {
+    if (!(await canStopJob(user.id, job))) {
       return res.status(403).json({ error: "Forbidden" });
     }
     if (!canStop(job.status)) {
@@ -353,7 +399,6 @@ router.get("/:id", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const id = paramId(req);
-    const role = await getUserRole(user.id);
 
     const job = await prisma.job.findUnique({
       where: { id },
@@ -365,7 +410,7 @@ router.get("/:id", requireAuth, async (req, res) => {
       },
     });
     if (!job) return res.status(404).json({ error: "Job not found" });
-    if (!(await canViewJob(user.id, role, job))) {
+    if (!(await canViewJob(user.id, job))) {
       return res.status(403).json({ error: "Forbidden" });
     }
 

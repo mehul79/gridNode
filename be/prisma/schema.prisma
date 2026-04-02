@@ -38,6 +38,20 @@ enum AgentSessionStatus {
   revoked
 }
 
+enum GpuVendor {
+  nvidia
+  amd
+  intel
+  other
+}
+
+enum CpuIntensity {
+  low
+  medium
+  high
+  critical
+}
+
 model User {
   id            String    @id
   name          String
@@ -48,8 +62,7 @@ model User {
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
   accounts      Account[]
-  role          String    @default("requester")
-
+  
   machines         Machine[]
   jobsRequested    Job[]     @relation("JobRequester")
   jobsOwned        Job[]     @relation("JobOwner")
@@ -113,6 +126,8 @@ model Machine {
   cpuTotal         Int
   memoryTotal      Int
   gpuTotal         Int
+  gpuMemoryTotal   Int?      // Total GPU memory across all GPUs in MB
+  gpuVendor        GpuVendor? // Primary GPU vendor (assumes homogeneous GPUs)
   status           String    @default("idle")
   lastHeartbeatAt  DateTime?
   createdAt        DateTime  @default(now())
@@ -136,10 +151,15 @@ model Job {
   command         String?
   notebookPath    String?
   datasetUri      String?
+  kaggleDatasetUrl String?
 
   cpuRequired     Int
   memoryRequired  Int
   gpuRequired     Int
+  gpuMemoryRequired Int?     // Total GPU memory in MB required
+  cpuIntensity    CpuIntensity? // How CPU-intensive the job is
+  estimatedDuration Float?   // Expected duration in hours
+  gpuVendor       GpuVendor?  // Preferred GPU vendor
 
   timeoutSeconds  Int        @default(3600)
 
