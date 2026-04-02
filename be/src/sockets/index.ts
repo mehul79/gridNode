@@ -23,3 +23,7 @@ export const initSocket = (server: HttpServer) => {
 export const emitLog = (jobId: string, log: string) => {
   io?.to(`job-${jobId}`).emit("log", log);
 };
+
+export const emitJobUpdate = (jobId: string, data: unknown) => {
+  io?.to(`job-${jobId}`).emit("job-update", data);
+};
