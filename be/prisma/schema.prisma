@@ -115,6 +115,8 @@ model Machine {
   gpuTotal         Int
   status           String    @default("idle")
   lastHeartbeatAt  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   owner   User           @relation(fields: [ownerId], references: [id])
   jobs    Job[]

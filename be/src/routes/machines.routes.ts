@@ -8,6 +8,21 @@ import { emitJobUpdate } from "../sockets";
 
 const router = Router();
 
+// GET /api/machines - list current user's machines
+router.get("/", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const machines = await prisma.machine.findMany({
+      where: { ownerId: user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(machines);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to list machines" });
+  }
+});
+
 // POST /api/machines/register
 router.post("/register", requireAuth, async (req, res) => {
   try {
