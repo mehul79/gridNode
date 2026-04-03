@@ -255,7 +255,7 @@ def main():
 
     start_cmd = sub.add_parser("start", help="Start the agent")
     start_cmd.add_argument("--token",   help="Owner token from dashboard (first run only)")
-    start_cmd.add_argument("--backend", default="https://your-platform.com")
+    start_cmd.add_argument("--backend", default="http://localhost:8000")
 
     sub.add_parser("reset", help="Clear saved config and re-register")
 
@@ -268,7 +268,7 @@ def main():
 
     # default to start
     global BACKEND_URL, AUTH_HEADERS, MACHINE_ID
-    backend = getattr(args, "backend", "https://your-platform.com")
+    backend = getattr(args, "backend", "http://localhost:8000")
     token   = getattr(args, "token", None)
 
     BACKEND_URL = backend
@@ -311,7 +311,7 @@ ComputeShare Agent
   Registered as machine: machine_a3f9
 
 Machine ID : machine_a3f9
-Backend    : https://your-platform.com
+Backend    : http://localhost:8000
 
 Heartbeat started. Waiting for jobs...
 
