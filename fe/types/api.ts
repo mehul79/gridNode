@@ -22,6 +22,7 @@ export interface User {
 export interface Machine {
   id: string;
   ownerId: string;
+  userKey: string | null;
   cpuTotal: number;
   memoryTotal: number;
   gpuTotal: number;
@@ -106,7 +107,7 @@ export interface PaginatedLogs {
 }
 
 export interface MachineRegisterResponse extends Machine {
-  sessionToken: string;
+  userKey: string;
 }
 
 // Input types for API calls

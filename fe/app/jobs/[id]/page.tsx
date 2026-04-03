@@ -273,51 +273,6 @@ export default function JobDetailPage() {
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Assignment</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <span className="font-medium">Requester:</span> {job.requesterId}
-            </div>
-            {job.ownerId && (
-              <div>
-                <span className="font-medium">Owner:</span> {job.ownerId}
-              </div>
-            )}
-            {job.machine ? (
-              <div>
-                <span className="font-medium">Machine:</span>
-                <div className="text-sm text-muted-foreground">
-                  {job.machine.id} (CPU: {job.machine.cpuTotal}, RAM: {job.machine.memoryTotal}MB, GPU: {job.machine.gpuTotal}
-                  {job.machine.gpuTotal > 0 && job.machine.gpuVendor && `, ${job.machine.gpuVendor} (${job.machine.gpuMemoryTotal}MB total)`})
-                  {job.machine.lastHeartbeatAt && (
-                    <div className="text-xs">
-                      Last heartbeat: {formatDistanceToNow(new Date(job.machine.lastHeartbeatAt), { addSuffix: true })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="text-muted-foreground">No machine assigned</div>
-            )}
-            {job.approval && (
-              <div>
-                <span className="font-medium">Approval:</span>{" "}
-                <Badge variant={job.approval.status === "approved" ? "success" : job.approval.status === "rejected" ? "destructive" : "warning"}>
-                  {job.approval.status}
-                </Badge>
-                {job.approval.decidedAt && (
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Decided {formatDistanceToNow(new Date(job.approval.decidedAt), { addSuffix: true })}
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       {/* Live Logs */}

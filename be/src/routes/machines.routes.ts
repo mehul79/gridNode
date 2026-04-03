@@ -25,31 +25,42 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/machines/register
-router.post("/register", requireAuth, async (req, res) => {
+// POST /api/machines/register - used by agents to register themselves
+router.post("/register", async (req, res) => {
   try {
-    const user = (req as any).user;
+    const { 
+      agent_token, 
+      cpu_cores, 
+      ram_gb, 
+      gpu, 
+      disk_free_gb 
+    } = req.body;
 
-    const { cpuTotal, memoryTotal, gpuTotal, gpuVendor, gpuMemoryTotal } = req.body;
-    if (
-      cpuTotal == null ||
-      memoryTotal == null ||
-      gpuTotal == null ||
-      typeof cpuTotal !== "number" ||
-      typeof memoryTotal !== "number" ||
-      typeof gpuTotal !== "number"
-    ) {
-      return res.status(400).json({ error: "cpuTotal, memoryTotal, gpuTotal are required numbers" });
+    if (!agent_token) {
+      return res.status(400).json({ error: "agent_token is required" });
     }
 
-    // If GPU count > 0, require vendor and memory total
-    if (gpuTotal > 0) {
-      if (!gpuVendor) {
-        return res.status(400).json({ error: "gpuVendor is required when GPU count > 0" });
-      }
-      if (gpuMemoryTotal == null || gpuMemoryTotal < 1024) {
-        return res.status(400).json({ error: "gpuMemoryTotal (MB, min 1024) is required when GPU count > 0" });
-      }
+    // Find user by userKey
+    const user = await prisma.user.findUnique({
+      where: { userKey: agent_token }
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: "Invalid agent token" });
+    }
+
+    const cpuTotal = cpu_cores || 0;
+    const memoryTotal = Math.round((ram_gb || 0) * 1024); // GB to MB
+    
+    // Parse GPU info if provided
+    let gpuTotal = 0;
+    let gpuVendor = null;
+    let gpuMemoryTotal = 0;
+
+    if (gpu && typeof gpu === "object") {
+      gpuTotal = gpu.count || 0;
+      gpuVendor = gpu.vendor?.toLowerCase();
+      gpuMemoryTotal = gpu.vram_mb || 0;
     }
 
     const machine = await prisma.machine.create({
@@ -58,14 +69,10 @@ router.post("/register", requireAuth, async (req, res) => {
         cpuTotal,
         memoryTotal,
         gpuTotal,
-        gpuVendor: gpuVendor ?? null,
-        gpuMemoryTotal: gpuMemoryTotal ?? null,
+        gpuVendor: (gpuVendor as any) || null,
+        gpuMemoryTotal: gpuMemoryTotal || null,
+        status: "idle",
       },
-    });
-
-    await prisma.agentSession.updateMany({
-      where: { machineId: machine.id },
-      data: { status: AgentSessionStatus.revoked },
     });
 
     const plainToken = generateSessionToken();
@@ -80,8 +87,8 @@ router.post("/register", requireAuth, async (req, res) => {
     });
 
     res.status(201).json({
-      ...machine,
-      sessionToken: plainToken,
+      machine_id: machine.id,
+      agent_token: plainToken, // Return the long-lived session token
     });
   } catch (err) {
     console.error(err);

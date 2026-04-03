@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth";
 import { prisma } from "../lib/db";
+import { generateSessionToken } from "../lib/token";
 
 const router = Router();
 
@@ -14,6 +15,7 @@ router.get("/me", requireAuth, async (req, res) => {
       name: true,
       email: true,
       image: true,
+      userKey: true,
       createdAt: true,
       updatedAt: true,
       _count: { select: { machines: true } },
@@ -25,10 +27,29 @@ router.get("/me", requireAuth, async (req, res) => {
     name: userWithCount.name,
     email: userWithCount.email,
     image: userWithCount.image,
+    userKey: userWithCount.userKey,
     createdAt: userWithCount.createdAt,
     updatedAt: userWithCount.updatedAt,
     machineCount: userWithCount._count.machines,
   });
+});
+
+// POST /api/check/user-key - generate or regenerate userKey
+router.post("/user-key", requireAuth, async (req, res) => {
+  try {
+    const sessionUser = (req as any).user;
+    const newKey = "cs_" + generateSessionToken();
+
+    const updatedUser = await prisma.user.update({
+      where: { id: sessionUser.id },
+      data: { userKey: newKey },
+    });
+
+    res.json({ userKey: updatedUser.userKey });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate user key" });
+  }
 });
 
 export default router;

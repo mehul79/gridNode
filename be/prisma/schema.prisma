@@ -44,6 +44,7 @@ model User {
   email         String
   emailVerified Boolean   @default(false)
   image         String?
+  userKey       String?   @unique
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
