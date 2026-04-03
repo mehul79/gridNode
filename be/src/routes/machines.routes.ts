@@ -66,6 +66,7 @@ router.post("/register", async (req, res) => {
     const machine = await prisma.machine.create({
       data: {
         ownerId: user.id,
+        userKey: agent_token, // Link the user's registration key to this machine
         cpuTotal,
         memoryTotal,
         gpuTotal,
