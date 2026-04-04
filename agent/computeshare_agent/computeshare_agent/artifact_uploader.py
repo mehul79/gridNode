@@ -1,4 +1,4 @@
-# After the job exits cleanly, scan the outputs/ folder and upload every file to the backend.
+# After the job exits cleanly, scan the outputs/ folder and register artifact metadata to the backend.
 
 import os
 import requests
@@ -29,26 +29,33 @@ def upload_all(job_id, workspace, backend_url, headers):
 
     for filename in files:
         filepath = os.path.join(outputs_dir, filename)
-        size_mb = os.path.getsize(filepath) / 1e6
+        size_bytes = os.path.getsize(filepath)
+        size_mb = size_bytes / 1e6
 
         if size_mb > MAX_ARTIFACT_SIZE_MB:
             print(f"  [SKIP] {filename} ({size_mb:.1f} MB) exceeds limit")
             failed.append({"file": filename, "reason": "too large"})
             continue
 
-        print(f"  Uploading {filename} ({size_mb:.1f} MB)...", end=" ")
+        print(f"  Registering artifact {filename} ({size_mb:.1f} MB)...", end=" ")
 
         try:
-            with open(filepath, "rb") as f:
-                resp = requests.post(
-                    f"{backend_url}/api/jobs/{job_id}/artifacts",
-                    files={"file": (filename, f)},
-                    headers=headers,
-                    timeout=120
-                )
+            # Backend currently only handles metadata, not actual file storage
+            payload = {
+                "filename": filename,
+                "storagePath": f"local://{job_id}/{filename}",
+                "sizeBytes": size_bytes,
+                "mimeType": "application/octet-stream" # basic fallback
+            }
+            resp = requests.post(
+                f"{backend_url}/api/jobs/{job_id}/artifacts",
+                json=payload,
+                headers=headers,
+                timeout=10
+            )
             resp.raise_for_status()
-            artifact_id = resp.json().get("artifact_id")
-            uploaded.append({"file": filename, "artifact_id": artifact_id})
+            data = resp.json()
+            uploaded.append({"file": filename, "id": data.get("id")})
             print("OK")
 
         except Exception as e:

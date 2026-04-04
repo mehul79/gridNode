@@ -8,8 +8,10 @@ from tqdm import tqdm
 
 
 def create(job_id):
-    os.makedirs("/workspaces", exist_ok=True)
-    base = f"/workspaces/job_{job_id}"
+    # Use current project directory to ensure permissions
+    root = os.path.join(os.getcwd(), "workspaces")
+    os.makedirs(root, exist_ok=True)
+    base = os.path.join(root, f"job_{job_id}")
     for sub in ["repo", "data", "outputs", "logs"]:
         os.makedirs(os.path.join(base, sub), exist_ok=True)
     return base
@@ -17,7 +19,14 @@ def create(job_id):
 
 def clone_repo(repo_url, workspace):
     target = os.path.join(workspace, "repo")
-    print(f"  Cloning {repo_url}...", end=" ")
+    print(f"  Preparing {repo_url}...", end=" ")
+
+    if os.path.isdir(repo_url):
+        # Support local folder for testing
+        shutil.copytree(repo_url, target, dirs_exist_ok=True)
+        print("OK (copied local)")
+        return
+
     result = subprocess.run(
         ["git", "clone", "--depth", "1", repo_url, target],
         capture_output=True, text=True
