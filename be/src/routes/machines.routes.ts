@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { JobStatus, AgentSessionStatus, Prisma } from "@prisma/client";
+import { JobStatus, AgentSessionStatus, Prisma, GpuVendor } from "@prisma/client";
 import { requireAuth } from "../middleware/requireAuth";
 import { requireAgentAuth } from "../middleware/requireAgentAuth";
 import { prisma } from "../lib/db";
@@ -60,10 +60,13 @@ router.post("/register", async (req, res) => {
     let gpuVendor = null;
     let gpuMemoryTotal = 0;
 
+    // console.log(gpu)
+    // console.log(typeof gpu)
+
     if (gpu && typeof gpu === "object") {
-      gpuTotal = gpu.count || 0;
-      gpuVendor = gpu.vendor?.toLowerCase();
-      gpuMemoryTotal = gpu.vram_mb || 0;
+      gpuTotal = 1 || 0;
+      gpuVendor = gpu.name.split(' ')[0].toLowerCase() as GpuVendor || null;
+      gpuMemoryTotal = gpu.vram_total_mb || 0;
     }
 
     const machine = await prisma.machine.create({
@@ -73,7 +76,7 @@ router.post("/register", async (req, res) => {
         cpuTotal,
         memoryTotal,
         gpuTotal,
-        gpuVendor: (gpuVendor as any) || null,
+        gpuVendor,
         gpuMemoryTotal: gpuMemoryTotal || null,
         status: "idle",
       },
