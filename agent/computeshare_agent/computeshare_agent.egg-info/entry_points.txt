@@ -1,2 +1,0 @@
-[console_scripts]
-computeshare-agent = computeshare_agent.agent:main
