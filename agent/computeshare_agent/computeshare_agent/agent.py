@@ -12,7 +12,6 @@ from computeshare_agent import artifact_uploader
 from computeshare_agent.prerequisites import run_all_checks
 from computeshare_agent.log_streamer import LogStreamer
 
-# ── globals set after registration ──────────────────────────────────────────
 BACKEND_URL = None
 AUTH_HEADERS = {}
 MACHINE_ID  = None
@@ -22,13 +21,9 @@ _current_container = None          # track running container for reclaim
 _reclaim_flag = threading.Event()  # set by heartbeat thread on reclaim signal
 
 
-# ── auth helpers ─────────────────────────────────────────────────────────────
-
 def headers():
     return AUTH_HEADERS.copy()
 
-
-# ── registration ─────────────────────────────────────────────────────────────
 
 def register(token):
     res = resources.snapshot()
@@ -63,8 +58,6 @@ def register(token):
     return cfg
 
 
-# ── heartbeat (runs in background thread) ────────────────────────────────────
-
 def heartbeat_loop():
     global _current_container
     while True:
@@ -95,8 +88,6 @@ def heartbeat_loop():
         time.sleep(10)
 
 
-# ── job polling ───────────────────────────────────────────────────────────────
-
 def fetch_job():
     # print(".", end="", flush=True) # Optional: dots for less noise
     resp = requests.get(
@@ -110,8 +101,6 @@ def fetch_job():
     print("\n  [INFO] Job found!")
     return resp.json().get("job")
 
-
-# ── status reporting ──────────────────────────────────────────────────────────
 
 def report_status(job_id, status, reason=None, allocation=None):
     payload = {"status": status}
@@ -129,8 +118,6 @@ def report_status(job_id, status, reason=None, allocation=None):
     except Exception as e:
         print(f"  [WARN] Status report failed: {e}")
 
-
-# ── job execution ─────────────────────────────────────────────────────────────
 
 def execute_job(job):
     global _current_container
@@ -212,8 +199,6 @@ def execute_job(job):
             workspace.cleanup(ws)
 
 
-# ── main loop ─────────────────────────────────────────────────────────────────
-
 def run_agent():
     print("\nComputeShare Agent")
     print("==================")
@@ -258,8 +243,6 @@ def run_agent():
             time.sleep(10)   # back off before retrying
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
 def main():
     parser = argparse.ArgumentParser(prog="computeshare-agent")
     sub = parser.add_subparsers(dest="command")
@@ -298,54 +281,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-"""
-
-## What the output looks like when it runs
-```
-ComputeShare Agent
-==================
-
-=== Checking prerequisites ===
-
-  Checking Python version... OK (Python 3.11)
-  Installing dependencies... OK
-  Checking Docker... OK
-  Checking NVIDIA Docker runtime... OK (GPU sharing enabled)
-
-=== All checks passed ===
-
-  CPU  : 5.5 usable cores (of 8 total)
-  RAM  : 10.2 GB usable (of 16 GB total)
-  GPU  : NVIDIA RTX 3080  8192 MB VRAM free (of 10240 MB)
-  DISK : 142.3 GB free
-
-  Registered as machine: machine_a3f9
-
-Machine ID : machine_a3f9
-Backend    : http://localhost:8000
-
-Heartbeat started. Waiting for jobs...
-
-──────────────────────────────────────────────────
-  Job job_101 | type: ml_notebook
-──────────────────────────────────────────────────
-  Allocation → CPU: 4.0 cores | RAM: 6.0 GB | GPU: yes
-  Cloning https://github.com/user/train-model... OK
-  Downloading train.csv...
-  100%|████████████████| 45.2M/45.2M [00:03<00:00]
-  
-  Docker command:
-  docker run --name computeshare_job_101 --rm --cpus=4.0 ...
-
-  [live log lines stream here from the container]
-
-  Uploading artifacts...
-  Uploading executed.ipynb (1.2 MB)... OK
-  Uploading model.pkl (38.4 MB)... OK
-  Uploaded: 2 | Failed: 0
-
-  Job job_101 completed successfully.
-
-Waiting for jobs...
-
-"""
