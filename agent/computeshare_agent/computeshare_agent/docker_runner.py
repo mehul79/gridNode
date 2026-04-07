@@ -2,6 +2,7 @@
 
 import subprocess
 import shlex
+import os
 
 MIN_VIABLE_CPU_CORES = 0.5
 MIN_VIABLE_RAM_GB    = 0.5
@@ -120,7 +121,37 @@ def pull_image(image):
     print("OK")
 
 
-def build_command(job, workspace, allocation):
+def run_setup_phase(job, workspace, dep_volume_name, image):
+    repo_dir = os.path.join(workspace, "repo")
+    req_path = os.path.join(repo_dir, "requirements.txt")
+    
+    if not os.path.exists(req_path):
+        return False
+    
+    print("  [Setup] Installing user dependencies...")
+    cmd = [
+        "docker", "run", "--rm",
+        "--network", "bridge",        # internet only during install
+        "--name", f"setup_{job['job_id']}",
+        "--entrypoint", "",           # override entrypoint to safely run pip
+        "-v", f"{workspace}/repo:/workspace/repo:ro",
+        "-v", f"{dep_volume_name}:/workspace/deps",
+        image,
+        "python3", "-m", "pip", "install",
+        "-r", "/workspace/repo/requirements.txt",
+        "--target", "/workspace/deps",
+        "--no-cache-dir",
+        "--quiet"
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    if result.returncode != 0:
+        raise RuntimeError(f"Dependency install failed:\n{result.stderr}")
+    
+    print("  [Setup] Dependencies installed OK")
+    return True
+
+
+def build_command(job, workspace, allocation, dep_volume=None):
     config         = get_image_config(job)
     image          = config["resolved_image"]
     network        = config["network"]
@@ -145,12 +176,17 @@ def build_command(job, workspace, allocation):
 
     if allocation.get("gpu"):
         cmd += ["--gpus", f"device={allocation['gpu']['device']}"]
+        
+    if dep_volume:
+        cmd += ["-v", f"{dep_volume}:/workspace/deps:ro"]
+        cmd += ["-e", "PYTHONPATH=/workspace/deps"]
 
     # job-type-specific entrypoints
     entrypoint_args = build_entrypoint(job, config)
     cmd += [image] + entrypoint_args
 
     return cmd, container_name
+
 
 def build_entrypoint(job, config):
     job_type = job["type"]
@@ -177,7 +213,6 @@ def build_entrypoint(job, config):
 
     if job_type == "data_processing":
         return [
-            "python3",
             f"/workspace/repo/{job['script_path']}",
             "--data-dir",   "/workspace/data",
             "--output-dir", "/workspace/outputs",
@@ -188,21 +223,41 @@ def build_entrypoint(job, config):
 
 def run(job, workspace, allocation):
     config = get_image_config(job)
-    pull_image(config["resolved_image"])
+    image = config["resolved_image"]
+    
+    pull_image(image)
 
-    cmd, container_name = build_command(job, workspace, allocation)
-    print(f"\n  Image   : {config['resolved_image']}")
-    print(f"  Network : {config['network']}")
-    print(f"  Command : {' '.join(shlex.quote(c) for c in cmd)}\n")
+    dep_volume = f"deps_{job['job_id']}"
+    repo_dir = os.path.join(workspace, "repo")
+    req_path = os.path.join(repo_dir, "requirements.txt")
+    has_deps = os.path.exists(req_path)
 
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1
-    )
-    return process, container_name
+    try:
+        if has_deps:
+            subprocess.run(["docker", "volume", "create", dep_volume], check=True)
+            success = run_setup_phase(job, workspace, dep_volume, image)
+            if not success:
+                has_deps = False
+
+        cmd, container_name = build_command(job, workspace, allocation, dep_volume if has_deps else None)
+        
+        print(f"\n  Image   : {image}")
+        print(f"  Network : {config['network']}")
+        print(f"  Command : {' '.join(shlex.quote(c) for c in cmd)}\n")
+
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        return process, container_name, dep_volume if has_deps else None
+
+    except Exception:
+        if has_deps:
+            subprocess.run(["docker", "volume", "rm", dep_volume], capture_output=True)
+        raise            
 
 
 def stop_container(container_name):
