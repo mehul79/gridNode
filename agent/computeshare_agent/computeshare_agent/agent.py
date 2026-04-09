@@ -113,7 +113,9 @@ def fetch_job():
         headers=headers(),
         timeout=5
     )
+    
     if resp.status_code == 204:
+        print("no job guys")
         return None
     resp.raise_for_status()
     print("\n  [INFO] Job found!")

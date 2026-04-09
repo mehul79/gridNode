@@ -162,6 +162,9 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Invalid gpuVendor" });
     }
 
+    console.log(`Job is recieved from FE`);
+
+
     // ✅ STRICT AUTOMATIC MATCHMAKING
     // 1. Define minimum requirements based on tiers
     const minCpu = CPU_MAP[cpuTier as string] || 1;
@@ -190,6 +193,9 @@ router.post("/", requireAuth, async (req, res) => {
         error: "No suitable machines currently online to handle this job. Try lower resource requirements."
       });
     }
+
+    console.log(`Suitable machine has been found`);
+
 
     const jobMachineId = matchedMachine.id;
     const jobProviderId = matchedMachine.ownerId;
@@ -240,6 +246,8 @@ router.post("/", requireAuth, async (req, res) => {
         _count: { select: { logs: true, artifacts: true } },
       },
     });
+
+    console.log(`Job is created`);
 
     const flattenedJob = flattenJobCounts(job);
 

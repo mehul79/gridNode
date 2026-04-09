@@ -99,6 +99,15 @@ router.post("/machines/:id/heartbeat", requireAgentAuth, async (req, res) => {
     }
 
     const now = new Date();
+    
+    // Check if there are any preempted jobs for this machine that the agent hasn't stopped yet
+    const preemptedJob = await prisma.job.findFirst({
+      where: {
+        machineId: machineId,
+        status: "preempted"
+      }
+    });
+
     await prisma.$transaction([
       prisma.agentSession.update({
         where: { id: agentSession.id },
@@ -110,7 +119,11 @@ router.post("/machines/:id/heartbeat", requireAgentAuth, async (req, res) => {
       }),
     ]);
 
-    res.json({ ok: true, lastHeartbeatAt: now.toISOString() });
+    res.json({ 
+      ok: true, 
+      lastHeartbeatAt: now.toISOString(),
+      reclaim: !!preemptedJob 
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Heartbeat failed" });
@@ -121,6 +134,7 @@ router.post("/machines/:id/heartbeat", requireAgentAuth, async (req, res) => {
 router.get("/jobs/next", requireAgentAuth, async (req, res) => {
   try {
     const agentSession = (req as any).agentSession;
+    // console.log(agentSession);
     
     // Find a job that is 'approved' or 'queued'
     // For now, we'll just take the oldest one. 
@@ -139,7 +153,12 @@ router.get("/jobs/next", requireAgentAuth, async (req, res) => {
       }
     });
 
+    console.log(job);
+    
+
     if (!job) {
+      console.log("no job");
+      
       return res.status(204).end();
     }
 
@@ -151,6 +170,9 @@ router.get("/jobs/next", requireAgentAuth, async (req, res) => {
         machineId: agentSession.machineId
       }
     });
+
+    console.log(updatedJob);
+    
 
     res.json({ job: updatedJob });
   } catch (err) {
