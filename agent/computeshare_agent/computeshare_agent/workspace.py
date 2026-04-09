@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 
 WORKSPACE_ROOT   = os.environ.get("COMPUTESHARE_WORKSPACE_ROOT",
-                                   "/var/computeshare/workspaces")
+                                   os.path.expanduser("~/.computeshare/workspaces"))
 DOWNLOAD_TIMEOUT = 120           # seconds for initial connection
 STREAM_TIMEOUT   = (10, 60)      # (connect, read) timeouts for streaming
 CHUNK_SIZE       = 8 * 1024 * 1024  # 8 MB chunks
