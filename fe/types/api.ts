@@ -72,6 +72,11 @@ export interface Artifact {
   createdAt: string;
 }
 
+export interface ArtifactDownload {
+  downloadUrl: string;
+  filename: string;
+}
+
 export interface Job {
   id: string;
   type: JobType;
