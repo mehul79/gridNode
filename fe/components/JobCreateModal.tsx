@@ -278,11 +278,11 @@ export default function JobCreateModal({
           {/* Command / Notebook Path */}
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {type === "ml_notebook" ? "Notebook Command" : "Execution Command"}
+              {type === "ml_notebook" ? "Notebook File Path" : "Execution Command"}
             </label>
             {type === "ml_notebook" ? (
               <Input
-                placeholder="e.g., jupyter nbconvert --to notebook execute.ipynb"
+                placeholder="e.g., notebooks/train.ipynb"
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 required
