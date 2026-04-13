@@ -165,37 +165,70 @@ router.post("/", requireAuth, async (req, res) => {
     console.log(`Job is recieved from FE`);
 
 
-    // ✅ STRICT AUTOMATIC MATCHMAKING
+    // ✅ STRICT AUTOMATIC MATCHMAKING (Best Fit + Trust Score)
     // 1. Define minimum requirements based on tiers
     const minCpu = CPU_MAP[cpuTier as string] || 1;
     const minRam = MEM_MAP[memoryTier as string] || 8192;
     const minGpuMem = gpuMemoryTier ? (GPU_MEM_MAP[gpuMemoryTier as string] || 0) : 0;
 
-    // 2. Find the first suitable machine
-    // - Not owned by the requester
-    // - Matches or exceeds CPU, RAM, and GPU specs
-    const matchedMachine = await prisma.machine.findFirst({
+    // 2. Determine Minimum Trust based on estimated duration
+    const trustMap: Record<string, number> = {
+      lt1h: 20,
+      h1_6: 60,
+      h6_12: 80,
+      h12_24: 80,
+      gt24h: 90
+    };
+    const minTrustScore = estimatedDuration ? (trustMap[estimatedDuration as string] || 20) : 20;
+
+    // 3. Find all suitable machines
+    const eligibleMachines = await prisma.machine.findMany({
       where: {
+        status: "idle",
         ownerId: { not: user.id },
         cpuTotal: { gte: minCpu },
         memoryTotal: { gte: minRam },
+        trustScore: { gte: minTrustScore },
         ...(gpuMemoryTier ? {
           gpuTotal: { gte: 1 },
           gpuMemoryTotal: { gte: minGpuMem },
           ...(gpuVendor ? { gpuVendor } : {})
         } : {})
-      },
-      select: { id: true, ownerId: true }
+      }
     });
 
-    if (!matchedMachine) {
-      return res.status(404).json({
-        error: "No suitable machines currently online to handle this job. Try lower resource requirements."
+    if (eligibleMachines.length === 0) {
+      return res.status(404).json({ 
+        error: "No suitable machines currently online to handle this job with the required trust level. Try lower resource requirements." 
       });
     }
 
-    console.log(`Suitable machine has been found`);
+    // 4. Calculate Best Fit (Bin Packing) and break ties with Trust Score
+    eligibleMachines.sort((a, b) => {
+      const calculateWaste = (m: any) => {
+        const cpuWaste = (m.cpuTotal - minCpu) / m.cpuTotal;
+        const ramWaste = (m.memoryTotal - minRam) / m.memoryTotal;
+        return cpuWaste + ramWaste;
+      };
 
+      const wasteA = calculateWaste(a);
+      const wasteB = calculateWaste(b);
+
+      // If waste is nearly identical (within 5%), higher trust score wins
+      if (Math.abs(wasteA - wasteB) < 0.05) {
+        return b.trustScore - a.trustScore;
+      }
+
+      return wasteA - wasteB;
+    });
+
+    const matchedMachine = eligibleMachines[0];
+    if(!matchedMachine){ 
+      return res.status(403).json({
+        message: `The first eligible machine that is picked isn't valid`
+      })
+    }
+    console.log(`Suitable machine has been found: ${matchedMachine.id}`);
 
     const jobMachineId = matchedMachine.id;
     const jobProviderId = matchedMachine.ownerId;
@@ -546,6 +579,31 @@ router.patch("/:id/status", requireAgentAuth, async (req, res) => {
       where: { id: jobId },
       data: { status },
     });
+
+    if ((status === JobStatus.completed || status === JobStatus.failed) && updated.machineId) {
+      const machine = await prisma.machine.findUnique({
+        where: { id: updated.machineId },
+        select: { id: true, trustScore: true }
+      });
+      if (machine) {
+        if (status === JobStatus.completed) {
+          await prisma.machine.update({
+            where: { id: machine.id },
+            data: {
+              trustScore: Math.min(100, machine.trustScore + 2.0),
+              totalJobsCompleted: { increment: 1 }
+            }
+          });
+        } else if (status === JobStatus.failed) {
+          await prisma.machine.update({
+            where: { id: machine.id },
+            data: {
+              totalJobsFailed: { increment: 1 }
+            }
+          });
+        }
+      }
+    }
 
     await appendJobEvent(
       jobId,
