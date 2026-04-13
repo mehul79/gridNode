@@ -33,6 +33,7 @@ async function sweep() {
                 ownerId: true,
                 lastHeartbeatAt: true,
                 status: true,
+                trustScore: true,
                 jobs: {
                     where: { status: { in: ACTIVE_JOB_STATUSES } },
                     select: { id: true, status: true },
@@ -82,7 +83,11 @@ async function sweep() {
 
                 await tx.machine.update({
                     where: { id: machine.id },
-                    data: { status: "offline" },
+                    data: { 
+                        status: "offline",
+                        trustScore: Math.max(0, machine.trustScore - 15.0),
+                        totalJobsFailed: { increment: machine.jobs.length }
+                    },
                 });
 
                 await tx.agentSession.updateMany({
