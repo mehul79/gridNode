@@ -103,11 +103,12 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// // POST /api/machines/:id/heartbeat — agent
+// POST /api/machines/:id/heartbeat — agent
 router.post("/:id/heartbeat", requireAgentAuth, async (req, res) => {
   try {
     const id = String(req.params.id);
     const agentSession = (req as any).agentSession;
+    const { status } = req.body as { status?: string };
 
     if (id !== agentSession.machineId) {
       return res.status(403).json({ error: "Machine id does not match session" });
@@ -119,7 +120,12 @@ router.post("/:id/heartbeat", requireAgentAuth, async (req, res) => {
       where: { machineId: id, status: JobStatus.preempted }
     });
 
-    console.log(`[heartbeat] machine=${id} preemptedJob=${preemptedJob?.id ?? "none"} reclaim=${!!preemptedJob}`);
+    console.log(`[heartbeat] machine=${id} status=${status} preemptedJob=${preemptedJob?.id ?? "none"} reclaim=${!!preemptedJob}`);
+
+    const updateData: any = { lastHeartbeatAt: now };
+    if (status === "running" || status === "idle") {
+      updateData.status = status;
+    }
 
     await prisma.$transaction([
       prisma.agentSession.update({
@@ -128,7 +134,7 @@ router.post("/:id/heartbeat", requireAgentAuth, async (req, res) => {
       }),
       prisma.machine.update({
         where: { id: agentSession.machineId },
-        data: { lastHeartbeatAt: now },
+        data: updateData,
       }),
     ]);
 
