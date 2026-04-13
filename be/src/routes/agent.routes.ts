@@ -95,7 +95,17 @@ router.get("/jobs/next", requireAgentAuth, async (req, res) => {
   try {
     const agentSession = (req as any).agentSession;
     
-    console.log(`[jobs/next] Agent session: machineId=${agentSession.machineId}`);
+    console.log(`[Polling] Agent requesting next job for machineId: ${agentSession.machineId}`);
+
+    // Query all potentially eligible jobs to help debug
+    const allApprovedJobs = await prisma.job.findMany({
+      where: { status: { in: ["approved", "queued"] as any } },
+      select: { id: true, status: true, machineId: true }
+    });
+    
+    if (allApprovedJobs.length > 0) {
+      console.log(`[Polling] Eligible jobs in DB:`, allApprovedJobs.map(j => `ID=${j.id} Status=${j.status} Machine=${j.machineId}`));
+    }
 
     const job = await prisma.job.findFirst({
       where: {
@@ -111,16 +121,12 @@ router.get("/jobs/next", requireAgentAuth, async (req, res) => {
       }
     });
 
-    console.log(`[jobs/next] Query result: ${job ? `found job ${job.id} status=${job.status} machineId=${job.machineId}` : "no job found"}`);
-
     if (!job) {
-      // log why — check if there are any approved jobs at all
-      const pendingCount = await prisma.job.count({
-        where: { status: { in: ["approved", "queued"] as any } }
-      });
-      console.log(`[jobs/next] No job for this machine. Total approved/queued jobs in DB: ${pendingCount}`);
+      console.log(`[Polling] No matching job for machineId=${agentSession.machineId}. Total approved jobs elsewhere: ${allApprovedJobs.length}`);
       return res.status(204).end();
     }
+
+    console.log(`[Polling] Found matching job: ${job.id}. Assigning to machine...`);
 
     const updatedJob = await prisma.job.update({
       where: { id: job.id },
@@ -128,20 +134,11 @@ router.get("/jobs/next", requireAgentAuth, async (req, res) => {
       include: { requester: { select: { name: true, email: true } } } // keep relation
     });
 
-    // console.log(`[jobs/next] Assigned job ${updatedJob.id} to machine ${agentSession.machineId}`);
-    // console.log(`[jobs/next] Job fields sent to agent:`, JSON.stringify({
-    //   id: updatedJob.id,
-    //   type: updatedJob.type,
-    //   repoUrl: updatedJob.repoUrl,
-    //   command: updatedJob.command,
-    //   cpuTier: updatedJob.cpuTier,
-    //   memoryTier: updatedJob.memoryTier,
-    //   kaggleDatasetUrl: updatedJob.kaggleDatasetUrl,
-    // }, null, 2));
+    console.log(`[Polling] Job ${updatedJob.id} successfully assigned to machine ${agentSession.machineId}`);
 
     res.json({ job: updatedJob });
   } catch (err) {
-    console.error("[jobs/next] Error:", err);
+    console.error("[Polling] Error:", err);
     res.status(500).json({ error: "Failed to fetch next job" });
   }
 });

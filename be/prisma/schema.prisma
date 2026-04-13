@@ -129,6 +129,10 @@ model Machine {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
+  trustScore         Float   @default(50.0)
+  totalJobsCompleted Int     @default(0)
+  totalJobsFailed    Int     @default(0)
+
   owner   User           @relation(fields: [ownerId], references: [id])
   jobs    Job[]
   sessions AgentSession[]
