@@ -469,7 +469,7 @@ router.post("/:id/artifacts/presign", requireAgentAuth, async (req, res) => {
     if (!job) return res.status(404).json({ error: `Job not found` });    
     if (job.machineId !== agentSession.machineId) {
       return res.status(403).json({
-        error: `Job no assigned to this machine`
+        error: `Job not assigned to this machine`
       })
     }
     const { filename, mimeType } = req.body as { filename?: string, mimeType?: string };
