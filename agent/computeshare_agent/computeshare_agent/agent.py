@@ -252,8 +252,10 @@ def execute_job(job):
         print(f"  [execute_job] Resource snapshot: cpu_usable={res['cpu']['usable_cores']} ram_usable={res['ram']['usable_gb']}")
 
         allocation = docker_runner.resolve_allocation(job, res)
-        print(f"  [execute_job] Allocation: {allocation}")
-
+        
+        if job["gpu_required"] and not allocation.get("gpu"):
+            raise RuntimeError(f"GPU job {job['job_id']} could not be allocated a GPU")
+        
         viable, reason = docker_runner.is_viable(allocation, job)
         print(f"  [execute_job] Viable: {viable} reason: {reason}")
 
@@ -285,7 +287,7 @@ def execute_job(job):
 
         # copy repo to a writable location within workspace so we can inject params
         data_input_dir = os.path.join(ws, "data", "input")
-        print(f"\n  [DEBUG] data/input contents:")
+        # print(f"\n  [DEBUG] data/input contents:")
         
         for root, dirs, files in os.walk(data_input_dir):
             for f in files:
@@ -293,19 +295,19 @@ def execute_job(job):
                 print(f"    {os.path.relpath(full, data_input_dir)} ({os.path.getsize(full)} bytes)")
 
         data_file = docker_runner.find_data_file(data_input_dir)
-        print(f"  [DEBUG] find_data_file returned: {data_file!r}")
+        # print(f"  [DEBUG] find_data_file returned: {data_file!r}")
 
         data_file_container = "/workspace/data/" + os.path.basename(data_file)
-        print(f"  [DEBUG] container path will be: {data_file_container!r}")
+        # print(f"  [DEBUG] container path will be: {data_file_container!r}")
 
         notebook_host_path, resolved_notebook_relpath = workspace.resolve_repo_file(
             ws,
             job["notebook_path"],
             allowed_extensions=(".ipynb",),
         )
-        print(f"  [DEBUG] resolved notebook host path: {notebook_host_path!r}")
-        print(f"  [DEBUG] resolved notebook relative path: {resolved_notebook_relpath!r}")
-        print(f"  [DEBUG] notebook exists: {os.path.exists(notebook_host_path)}")
+        # print(f"  [DEBUG] resolved notebook host path: {notebook_host_path!r}")
+        # print(f"  [DEBUG] resolved notebook relative path: {resolved_notebook_relpath!r}")
+        # print(f"  [DEBUG] notebook exists: {os.path.exists(notebook_host_path)}")
 
         # read the notebook and check for parameters tag before injection
         with open(notebook_host_path) as _f:
@@ -314,7 +316,7 @@ def execute_job(job):
             c for c in _nb.get("cells", [])
             if "parameters" in c.get("metadata", {}).get("tags", [])
         ]
-        print(f"  [DEBUG] cells with 'parameters' tag before injection: {len(_tagged)}")
+        # print(f"  [DEBUG] cells with 'parameters' tag before injection: {len(_tagged)}")
 
         docker_runner.inject_parameters_cell(notebook_host_path, {
             "DATA_DIR":   data_file_container,

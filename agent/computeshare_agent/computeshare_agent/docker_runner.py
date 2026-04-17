@@ -6,7 +6,7 @@ import os
 
 MIN_VIABLE_CPU_CORES = 0.5
 MIN_VIABLE_RAM_GB    = 0.5
-GPU_VRAM_HEADROOM_MB = 512
+GPU_VRAM_HEADROOM_MB = 0    # for now
 
 IMAGE_REGISTRY = {
     "ml_notebook": {
@@ -55,12 +55,6 @@ def get_image_config(job):
 
 
 def resolve_allocation(job, resources):
-    """
-    job says what it wants.
-    resources says what the machine has.
-    this function produces what Docker will actually get.
-    """
-    # Backend now uses tiers (CpuTier, MemoryTier), so we need to map them
     cpu_request = job.get("cpu_request")
     if cpu_request is None:
         tier_map = {"light": 1, "medium": 2, "heavy": 4}
@@ -71,30 +65,35 @@ def resolve_allocation(job, resources):
         tier_map = {"gb8": 4, "gb16": 8, "gb32": 16, "gb64": 32}
         ram_request_gb = tier_map.get(job.get("memoryTier"), 4)
 
-    cpu_alloc = min(cpu_request, resources["cpu"]["usable_cores"])
-    ram_alloc = min(ram_request_gb, resources["ram"]["usable_gb"])
-
-    cpu_alloc = max(cpu_alloc, MIN_VIABLE_CPU_CORES)
-    ram_alloc = max(ram_alloc, MIN_VIABLE_RAM_GB)
+    cpu_alloc = max(min(cpu_request, resources["cpu"]["usable_cores"]), MIN_VIABLE_CPU_CORES)
+    ram_alloc = max(min(ram_request_gb, resources["ram"]["usable_gb"]), MIN_VIABLE_RAM_GB)
 
     gpu_alloc = None
-    # Check if GPU is required based on gpuMemoryTier
-    gpu_required = job.get("gpuMemoryTier") is not None
-    if gpu_required and resources["gpu"]:
-        gpu = resources["gpu"]
-        # Simplified mapping for GPU memory tier to MB
-        vram_map = {
-            "gb8": 8192, "gb12": 12288, "gb16": 16384, 
-            "gb24": 24576, "gb32": 32768, "gb48": 49152
-        }
-        needed_mb = vram_map.get(job.get("gpuMemoryTier"), 2048)
-        if gpu["vram_free_mb"] >= needed_mb + GPU_VRAM_HEADROOM_MB:
-            gpu_alloc = {"device": 0, "vram_mb": needed_mb}
+    gpu_required = job.get("gpu_required") is not None
 
+    if gpu_required and resources.get("gpu"):
+        gpu = resources["gpu"]
+
+        vram_map = {
+            "gb8": 8000,
+            "gb12": 12000,
+            "gb16": 16000,
+            "gb24": 24000,
+            "gb32": 32000,
+            "gb48": 48000,
+        }
+
+        needed_mb = vram_map.get(job.get("gpuMemoryTier"), 2000)
+        if gpu["vram_total_mb"] + 64 >= needed_mb:
+            print("[DEBUG] needed_mb =", needed_mb)
+            print("[DEBUG] threshold  =", needed_mb + GPU_VRAM_HEADROOM_MB)
+            gpu_alloc = {"device": 0, "vram_mb": needed_mb}    
+        else:
+            print(f"insufficient_vram: free={gpu['vram_free_mb']} need={needed_mb}")    
     return {
-        "cpu":    round(cpu_alloc, 1),
+        "cpu": round(cpu_alloc, 1),
         "ram_gb": round(ram_alloc, 1),
-        "gpu":    gpu_alloc,
+        "gpu": gpu_alloc,
     }
 
 
@@ -232,8 +231,7 @@ def build_command(job, workspace, allocation, dep_volume=None):
     ]
 
     if allocation.get("gpu"):
-        cmd += ["--gpus", f"device={allocation['gpu']['device']}"]
-        
+        cmd += ["--gpus", "all"]        
     if dep_volume:
         cmd += ["-v", f"{dep_volume}:/workspace/deps:ro"]
         cmd += ["-e", "PYTHONPATH=/workspace/deps"]
