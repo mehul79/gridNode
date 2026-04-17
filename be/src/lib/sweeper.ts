@@ -2,7 +2,7 @@ import { PrismaClient, JobStatus } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const HEARTBEAT_TIMEOUT_MS = 3 * 60 * 1000;
+const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 1000;
 const SESSION_STALE_MS = 10 * 60 * 1000;
 
