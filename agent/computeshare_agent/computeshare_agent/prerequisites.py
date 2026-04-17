@@ -38,8 +38,13 @@ def check_docker():
         )
         if result.returncode != 0:
             print("FAIL")
-            print("\n  [ERROR] Docker is installed but the daemon is not running.")
-            print("  Fix: Start Docker Desktop, or run: sudo systemctl start docker")
+            print("stderr:", result.stderr.strip())
+            if "could not select device driver" in result.stderr:
+                print("→ NVIDIA runtime not configured")
+            elif "permission denied" in result.stderr.lower():
+                print("→ Docker permission issue")
+            elif "not found" in result.stderr.lower():
+                print("→ Binary not found (PATH issue)")
             sys.exit(1)
     except subprocess.TimeoutExpired:
         print("FAIL")
@@ -59,16 +64,15 @@ def check_nvidia_docker():
     try:
         result = subprocess.run(
             ["docker", "run", "--rm", "--gpus", "all",
-             "nvidia/cuda:12.0-base-ubuntu22.04", "nvidia-smi"],
+             "nvidia/cuda:12.3.2-base-ubuntu22.04", "nvidia-smi"],
             capture_output=True,
             text=True,
             timeout=30
         )
         if result.returncode != 0:
-            print("WARN")
-            print("  [WARN] GPU found but nvidia-container-toolkit is not set up.")
-            print("  GPU jobs will not be accepted on this machine.")
-            print("  Fix: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html")
+            print("FAIL")
+            print("\n--- STDOUT ---\n", result.stdout)
+            print("\n--- STDERR ---\n", result.stderr)
             return False
     except subprocess.TimeoutExpired:
         print("WARN (nvidia-docker check timed out)")
@@ -129,3 +133,5 @@ def run_all_checks():
     check_gvisor()
     print("\n=== All checks passed ===\n")
     return {"gpu_available": gpu_available}
+
+run_all_checks()
