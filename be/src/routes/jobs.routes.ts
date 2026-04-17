@@ -14,11 +14,7 @@ import { error } from "console";
 
 const router = Router();
 
-const CPU_MAP: Record<string, number> = { light: 1, medium: 2, heavy: 4 };
-const MEM_MAP: Record<string, number> = { gb8: 8192, gb16: 16384, gb32: 32768, gb64: 65536 };
-const GPU_MEM_MAP: Record<string, number> = {
-  gb8: 8192, gb12: 12288, gb16: 16384, gb24: 24576, gb32: 32768, gb48: 49152
-};
+import computeEffectiveRequirements from "../lib/matchCriteria";
 
 function paramId(req: Request): string {
   return String(req.params.id);
@@ -168,33 +164,20 @@ router.post("/", requireAuth, async (req, res) => {
     console.log(`Job is recieved from FE`);
 
 
-    // ✅ STRICT AUTOMATIC MATCHMAKING (Best Fit + Trust Score)
-    // 1. Define minimum requirements based on tiers
-    const minCpu = CPU_MAP[cpuTier as string] || 1;
-    const minRam = MEM_MAP[memoryTier as string] || 8192;
-    const minGpuMem = gpuMemoryTier ? (GPU_MEM_MAP[gpuMemoryTier as string] || 0) : 0;
+    // Compute effective requirements with tolerances (backend-side)
+    const eff = computeEffectiveRequirements({ cpuTier, memoryTier, gpuMemoryTier, estimatedDuration });
 
-    // 2. Determine Minimum Trust based on estimated duration
-    const trustMap: Record<string, number> = {
-      lt1h: 20,
-      h1_6: 60,
-      h6_12: 80,
-      h12_24: 80,
-      gt24h: 90
-    };
-    const minTrustScore = estimatedDuration ? (trustMap[estimatedDuration as string] || 20) : 20;
-
-    // 3. Find all suitable machines
+    // 3. Find all suitable machines (use effective minima)
     const eligibleMachines = await prisma.machine.findMany({
       where: {
         status: "idle",
         ownerId: { not: user.id },
-        cpuTotal: { gte: minCpu },
-        memoryTotal: { gte: minRam },
-        trustScore: { gte: minTrustScore },
+        cpuTotal: { gte: eff.minCpu },
+        memoryTotal: { gte: eff.minRamEffective },
+        trustScore: { gte: eff.minTrustScore },
         ...(gpuMemoryTier ? {
           gpuTotal: { gte: 1 },
-          gpuMemoryTotal: { gte: minGpuMem },
+          gpuMemoryTotal: { gte: eff.minGpuMemEffective },
           ...(gpuVendor ? { gpuVendor } : {})
         } : {})
       }
@@ -209,8 +192,8 @@ router.post("/", requireAuth, async (req, res) => {
     // 4. Calculate Best Fit (Bin Packing) and break ties with Trust Score
     eligibleMachines.sort((a, b) => {
       const calculateWaste = (m: any) => {
-        const cpuWaste = (m.cpuTotal - minCpu) / m.cpuTotal;
-        const ramWaste = (m.memoryTotal - minRam) / m.memoryTotal;
+        const cpuWaste = (m.cpuTotal - eff.minCpu) / m.cpuTotal;
+        const ramWaste = (m.memoryTotal - eff.minRam) / m.memoryTotal;
         return cpuWaste + ramWaste;
       };
 

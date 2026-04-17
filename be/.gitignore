@@ -4,3 +4,4 @@ node_modules
 workspaces
 /src/generated/prisma
 dist
+scripts

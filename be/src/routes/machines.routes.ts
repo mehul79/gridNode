@@ -53,7 +53,7 @@ router.post("/register", async (req, res) => {
     }
 
     const cpuTotal = cpu_cores || 0;
-    const memoryTotal = Math.round((ram_gb || 0) * 1024); // GB to MB
+    const memoryTotal = Math.ceil((ram_gb || 0) * 1024); // GB to MB, round up to avoid underreporting
     
     // Parse GPU info if provided
     let gpuTotal = 0;
@@ -65,8 +65,8 @@ router.post("/register", async (req, res) => {
 
     if (gpu && typeof gpu === "object") {
       gpuTotal = 1 || 0;
-      gpuVendor = gpu.name.split(' ')[0].toLowerCase() as GpuVendor || null;
-      gpuMemoryTotal = gpu.vram_total_mb || 0;
+      gpuVendor = (gpu.name.split(' ')[0].toLowerCase() as GpuVendor) || null;
+      gpuMemoryTotal = Math.ceil(gpu.vram_total_mb || 0);
     }
 
     const machine = await prisma.machine.create({
