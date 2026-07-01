@@ -275,7 +275,7 @@ def build_entrypoint(job, workspace, config):
 
     if job_type == "data_processing":
         return [
-            f"/workspace/repo/{job['script_path']}",
+            f"/workspace/repo/{job['notebook_path']}",
             "--data-dir",   "/workspace/data",
             "--output-dir", "/workspace/outputs",
         ]

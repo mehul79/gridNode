@@ -61,7 +61,15 @@ export default function JobCard({ job, onStop }: JobCardProps) {
           </div>
           {job.estimatedDuration && (
             <div>
-              <span className="text-muted-foreground">Duration:</span> {job.estimatedDuration.replace("h", " hours")}
+              <span className="text-muted-foreground">Duration:</span> {
+                {
+                  lt1h: "< 1 hour",
+                  h1_6: "1-6 hours",
+                  h6_12: "6-12 hours",
+                  h12_24: "12-24 hours",
+                  gt24h: "24+ hours",
+                }[job.estimatedDuration] || job.estimatedDuration
+              }
             </div>
           )}
         </div>

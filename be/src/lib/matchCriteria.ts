@@ -1,6 +1,6 @@
 import { CpuTier, MemoryTier, GpuMemoryTier, DurationTier } from "@prisma/client";
 
-const CPU_MAP: Record<string, number> = { light: 1, medium: 2, heavy: 4 };
+const CPU_MAP: Record<string, number> = { light: 2, medium: 4, heavy: 8 };
 const MEM_MAP: Record<string, number> = { gb8: 8192, gb16: 16384, gb32: 32768, gb64: 65536 };
 const GPU_MEM_MAP: Record<string, number> = {
   gb8: 8192, gb12: 12288, gb16: 16384, gb24: 24576, gb32: 32768, gb48: 49152

@@ -214,7 +214,7 @@ export default function MachinesPage() {
                 <CardContent className="space-y-3">
                   {machine.gpuTotal > 0 && machine.gpuVendor && (
                     <div className="text-sm">
-                      <span className="font-medium">GPU:</span> {machine.gpuVendor} ({Math.round(machine.gpuMemoryTotal || 0 / 1024)}GB)
+                      <span className="font-medium">GPU:</span> {machine.gpuVendor} ({Math.round((machine.gpuMemoryTotal || 0) / 1024)}GB)
                     </div>
                   )}
                   {machine.lastHeartbeatAt && (

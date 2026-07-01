@@ -22,15 +22,15 @@ status_updates = []
 
 # Pre-load a test job that the agent will pick up
 TEST_JOB = {
-    "job_id": "test_job_001",
+    "id": "test_job_001",
     "type": "ml_notebook",
-    "github_repo": "https://github.com/fastai/fastbook",  # real public repo
-    "notebook_path": "01_intro.ipynb",
-    "dataset_url": None,
-    "cpu_request": 2,
-    "ram_request_gb": 2,
-    "gpu_required": False,
-    "timeout_seconds": 300,
+    "repoUrl": "https://github.com/fastai/fastbook",
+    "command": "01_intro.ipynb",
+    "kaggleDatasetUrl": None,
+    "cpuTier": "medium",
+    "memoryTier": "gb8",
+    "gpuMemoryTier": None,
+    "estimatedDuration": "h1_6",
 }
 
 job_served = False   # only serve the job once
@@ -76,17 +76,23 @@ def receive_logs(job_id):
     return jsonify({"ok": True})
 
 
-@app.route("/api/jobs/<job_id>/artifacts", methods=["POST"])
-def receive_artifact(job_id):
-    f = request.files.get("file")
-    if f:
-        save_path = f"/tmp/mock_artifacts/{job_id}"
-        os.makedirs(save_path, exist_ok=True)
-        f.save(os.path.join(save_path, f.filename))
-        artifacts_received.append(f.filename)
-        print(f"\n[MOCK] Artifact received: {f.filename}")
-        return jsonify({"artifact_id": f"art_{int(time.time())}"})
-    return jsonify({"error": "no file"}), 400
+@app.route("/api/jobs/<job_id>/artifacts/presign", methods=["POST"])
+def presign_artifact(job_id):
+    data = request.json
+    filename = data.get("filename")
+    return jsonify({
+        "uploadUrl": f"http://localhost:8000/api/mock/upload/{job_id}/{filename}",
+        "storagePath": f"mock_path/{filename}"
+    })
+
+@app.route("/api/jobs/<job_id>/artifacts/confirm", methods=["POST"])
+def confirm_artifact(job_id):
+    return jsonify({"ok": True})
+
+@app.route("/api/mock/upload/<job_id>/<filename>", methods=["PUT"])
+def upload_artifact_mock(job_id, filename):
+    artifacts_received.append(filename)
+    return "", 200
 
 
 @app.route("/api/jobs/<job_id>/status", methods=["PATCH"])

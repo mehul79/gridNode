@@ -32,6 +32,9 @@ export interface Machine {
   lastHeartbeatAt: string | null;
   createdAt: string;
   updatedAt: string;
+  trustScore: number;
+  totalJobsCompleted: number;
+  totalJobsFailed: number;
 }
 
 export interface Approval {

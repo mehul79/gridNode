@@ -21,7 +21,7 @@ export async function sendJobResultEmail({
         .join("\n");
 
     const { data, error } = await resend.emails.send({
-        from: process.env.EMAIL_FROM || "<GridNode <notifications@domain.com>",
+        from: process.env.EMAIL_FROM || "GridNode <notifications@domain.com>",
         to,
         subject: `Job ${job.id} ${job.status}`,
         text: `
