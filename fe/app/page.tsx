@@ -60,9 +60,9 @@ export default function Dashboard() {
     }
   }, [session]);
 
-  const fetchJobs = async () => {
+  async function fetchJobs() {
     try {
-      const res = await fetch("http://localhost:3005/api/jobs", { credentials: "include" });
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/jobs`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setJobs(data);

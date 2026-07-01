@@ -306,6 +306,7 @@ def execute_job(job):
             job["notebook_path"],
             allowed_extensions=(".ipynb",),
         )
+        job["notebook_path"] = resolved_notebook_relpath
         # print(f"  [DEBUG] resolved notebook host path: {notebook_host_path!r}")
         # print(f"  [DEBUG] resolved notebook relative path: {resolved_notebook_relpath!r}")
         # print(f"  [DEBUG] notebook exists: {os.path.exists(notebook_host_path)}")

@@ -54,7 +54,7 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     if (session) {
-      fetch("http://localhost:3005/api/check/me", { credentials: "include" })
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/check/me`, { credentials: "include" })
         .then((res) => res.json())
         .then((user) => {
           setHasMachines(user?.machineCount ? user.machineCount > 0 : false);
@@ -81,7 +81,7 @@ export default function ApprovalsPage() {
   const fetchApprovals = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:3005/api/approvals/pending", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/approvals/pending`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch approvals");
@@ -98,7 +98,7 @@ export default function ApprovalsPage() {
     if (!confirm("Approve this job?")) return;
     setActing(approvalId);
     try {
-      const res = await fetch(`http://localhost:3005/api/approvals/${approvalId}/approve`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/approvals/${approvalId}/approve`, {
         method: "POST",
         credentials: "include",
       });
@@ -118,7 +118,7 @@ export default function ApprovalsPage() {
     if (!confirm("Reject this job? This action cannot be undone.")) return;
     setActing(approvalId);
     try {
-      const res = await fetch(`http://localhost:3005/api/approvals/${approvalId}/reject`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/approvals/${approvalId}/reject`, {
         method: "POST",
         credentials: "include",
       });

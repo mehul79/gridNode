@@ -53,7 +53,7 @@ def get_gpu():
             "--format=csv,noheader,nounits"
         ], text=True, timeout=5).strip()
 
-        name, mem_total, mem_free, util = out.split(", ")
+        name, mem_total, mem_free, util = out.splitlines()[0].split(", ")
         return {
             "name":          name.strip(),
             "vram_total_mb": int(mem_total),

@@ -100,7 +100,7 @@ export default function JobCreateModal({
         throw new Error(type === "ml_notebook" ? "Command is required for notebook jobs" : "Command is required for video jobs");
       }
 
-      const res = await fetch("http://localhost:3005/api/jobs", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/jobs`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

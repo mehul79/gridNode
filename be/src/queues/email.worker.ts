@@ -22,7 +22,7 @@ export const emailWorker = new Worker(
     const [logs, artifacts] = await Promise.all([
       prisma.jobLog.findMany({
         where: { jobId },
-        orderBy: { createdAt: "desc" },
+        orderBy: { sequence: "desc" },
         take: 100,
       }),
       prisma.artifact.findMany({

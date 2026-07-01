@@ -51,7 +51,7 @@ export default function MachinesPage() {
   const fetchMachines = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:3005/api/machines", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/machines`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch machines");
@@ -66,7 +66,7 @@ export default function MachinesPage() {
 
   const fetchUser = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:3005/api/check/me", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/check/me`, {
         credentials: "include",
       });
       if (res.ok) {
@@ -87,7 +87,7 @@ export default function MachinesPage() {
     setRegistering(true);
     setError(null);
     try {
-      const res = await fetch("http://localhost:3005/api/check/user-key", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/check/user-key`, {
         method: "POST",
         credentials: "include",
       });
@@ -113,7 +113,7 @@ export default function MachinesPage() {
     if (!confirm("Reclaim this machine? All running jobs on this machine will be preempted.")) return;
     setReclaiming(machineId);
     try {
-      const res = await fetch(`http://localhost:3005/api/machines/${machineId}/reclaim`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/machines/${machineId}/reclaim`, {
         method: "POST",
         credentials: "include",
       });

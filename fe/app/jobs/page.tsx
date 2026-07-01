@@ -28,7 +28,7 @@ export default function JobsPage() {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.append("status", statusFilter);
       const query = params.toString();
-      const url = `http://localhost:3005/api/jobs${query ? `?${query}` : ""}`;
+      const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/jobs${query ? `?${query}` : ""}`;
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch jobs");
       const data = await res.json();
@@ -47,7 +47,7 @@ export default function JobsPage() {
   const handleStop = async (jobId: string) => {
     if (!confirm("Are you sure you want to stop this job?")) return;
     try {
-      const res = await fetch(`http://localhost:3005/api/jobs/${jobId}/stop`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/jobs/${jobId}/stop`, {
         method: "POST",
         credentials: "include",
       });

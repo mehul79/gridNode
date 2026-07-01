@@ -24,7 +24,7 @@ export default function Navbar() {
 
   useEffect(() => {
     if (session) {
-      fetch("http://localhost:3005/api/check/me", { credentials: "include" })
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/check/me`, { credentials: "include" })
         .then((res) => res.json())
         .then((user) => {
           if (user?.machineCount && user.machineCount > 0) {
