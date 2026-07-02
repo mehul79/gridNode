@@ -51,14 +51,16 @@ class LogStreamer:
             if not self._buffer:
                 return
             batch = self._buffer[:MAX_BATCH_SIZE]
-            self._buffer = self._buffer[MAX_BATCH_SIZE:]
 
         try:
-            requests.post(
+            resp = requests.post(
                 f"{self.backend_url}/api/jobs/{self.job_id}/logs",
                 json={"lines": batch},
                 headers=self.headers,
                 timeout=5
             )
+            resp.raise_for_status()
+            with self._lock:
+                self._buffer = self._buffer[len(batch):]
         except Exception as e:
             print(f"  [WARN] Log flush failed: {e}")

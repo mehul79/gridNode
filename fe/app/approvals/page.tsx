@@ -64,8 +64,10 @@ export default function ApprovalsPage() {
           console.error(err);
           setInfoLoaded(true);
         });
+    } else if (!isPending) {
+      setInfoLoaded(true);
     }
-  }, [session]);
+  }, [session, isPending]);
 
   useEffect(() => {
     if (!infoLoaded) return;
@@ -134,7 +136,7 @@ export default function ApprovalsPage() {
     }
   };
 
-  if (isPending || !session) {
+  if (isPending || !session || !infoLoaded) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -179,7 +181,7 @@ export default function ApprovalsPage() {
                   <div>
                     <CardTitle className="capitalize">{approval.job.type} Job</CardTitle>
                     <CardDescription className="mt-1">
-                      Submitted by {approval.job.requester.name || approval.job.requester.email} •{" "}
+                      Submitted by {approval.job.requester?.name || approval.job.requester?.email || "Unknown"} •{" "}
                       {formatDistanceToNow(new Date(approval.createdAt), { addSuffix: true })}
                     </CardDescription>
                   </div>

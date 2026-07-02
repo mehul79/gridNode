@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { getJob, getJobArtifactDownloadUrl, getJobArtifacts, getJobLogs, stopJob } from "@/lib/api";
 import { useSocket } from "@/lib/socket-context";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import {
   Card,
   CardContent,
@@ -61,7 +62,8 @@ export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
   const jobId = params.id as string;
-  const { socket, isConnected, joinJob } = useSocket();
+  const { socket, isConnected, joinJob, leaveJob } = useSocket();
+  const { toast } = useToast();
 
   const [job, setJob] = useState<Job | null>(null);
   const [logs, setLogs] = useState<JobLog[]>([]);
@@ -71,44 +73,118 @@ export default function JobDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
   const [downloadingArtifactId, setDownloadingArtifactId] = useState<string | null>(null);
+  const [logsError, setLogsError] = useState<string | null>(null);
+  const [artifactsError, setArtifactsError] = useState<string | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const nextSequenceRef = useRef(0);
+  const isFetchingLogs = useRef(false);
+  const pendingLogsFetchType = useRef<"incremental" | "full" | null>(null);
+  const currentJobIdRef = useRef(jobId);
+
+  useEffect(() => {
+    currentJobIdRef.current = jobId;
+  }, [jobId]);
+
+  useEffect(() => {
+    nextSequenceRef.current = 0;
+    isFetchingLogs.current = false;
+    pendingLogsFetchType.current = null;
+    setJob(null);
+    setLogs([]);
+    setEvents([]);
+    setArtifacts([]);
+    setError(null);
+    setLogsError(null);
+    setArtifactsError(null);
+    setLoading(true);
+  }, [jobId]);
 
   const fetchJob = useCallback(async () => {
     try {
       const data = await getJob(jobId);
+      if (jobId !== currentJobIdRef.current) return;
       setJob(data);
       setEvents(data.events || []);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      if (jobId !== currentJobIdRef.current) return;
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (jobId === currentJobIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [jobId]);
 
   const fetchLogs = useCallback(
-    async (afterSequence = 0) => {
+    async (afterSequence?: number) => {
+      const isFull = afterSequence === 0;
+      const targetSequence = afterSequence !== undefined ? afterSequence : nextSequenceRef.current;
+
+      if (isFetchingLogs.current) {
+        if (jobId === currentJobIdRef.current) {
+          if (isFull) {
+            pendingLogsFetchType.current = "full";
+          } else if (pendingLogsFetchType.current !== "full") {
+            pendingLogsFetchType.current = "incremental";
+          }
+        }
+        return targetSequence;
+      }
+
+      if (jobId === currentJobIdRef.current) {
+        isFetchingLogs.current = true;
+        setLogsError(null);
+      }
+
       try {
-        const data = await getJobLogs(jobId, afterSequence, 5000);
+        const data = await getJobLogs(jobId, targetSequence, 5000);
+        
+        if (jobId !== currentJobIdRef.current) return targetSequence;
+        
         setLogs((prev) => {
+          if (targetSequence === 0) {
+            return data.logs.sort((a, b) => a.sequence - b.sequence);
+          }
           const existingSeqs = new Set(prev.map((l) => l.sequence));
           const newLogs = data.logs.filter((l) => !existingSeqs.has(l.sequence));
           return [...prev, ...newLogs].sort((a, b) => a.sequence - b.sequence);
         });
+        nextSequenceRef.current = data.nextAfterSequence;
         return data.nextAfterSequence;
-      } catch (e) {
+      } catch (e: unknown) {
+        if (jobId !== currentJobIdRef.current) return targetSequence;
         console.error("Failed to fetch logs", e);
+        setLogsError(e instanceof Error ? e.message : "Failed to load logs.");
+      } finally {
+        if (jobId === currentJobIdRef.current) {
+          isFetchingLogs.current = false;
+          const nextFetchType = pendingLogsFetchType.current;
+          if (nextFetchType !== null) {
+            pendingLogsFetchType.current = null;
+            if (nextFetchType === "full") {
+              fetchLogs(0);
+            } else {
+              fetchLogs();
+            }
+          }
+        }
       }
-      return afterSequence;
+      return targetSequence;
     },
     [jobId],
   );
 
   const fetchArtifacts = useCallback(async () => {
     try {
+      if (jobId !== currentJobIdRef.current) return;
+      setArtifactsError(null);
       const data = await getJobArtifacts(jobId);
+      if (jobId !== currentJobIdRef.current) return;
       setArtifacts(data);
-    } catch (e) {
+    } catch (e: unknown) {
+      if (jobId !== currentJobIdRef.current) return;
       console.error("Failed to fetch artifacts", e);
+      setArtifactsError(e instanceof Error ? e.message : "Failed to load artifacts.");
     }
   }, [jobId]);
 
@@ -117,8 +193,17 @@ export default function JobDetailPage() {
       setDownloadingArtifactId(artifact.id);
       const { downloadUrl } = await getJobArtifactDownloadUrl(jobId, artifact.id);
       window.open(downloadUrl, "_blank", "noopener,noreferrer");
-    } catch (error) {
+      toast({
+        title: "Download Started",
+        description: `Downloading ${artifact.filename}...`,
+      });
+    } catch (error: unknown) {
       console.error("Failed to get artifact download URL from backend", error);
+      toast({
+        variant: "destructive",
+        title: "Download Failed",
+        description: error instanceof Error ? error.message : "Failed to retrieve download link. Please try again.",
+      });
     } finally {
       setDownloadingArtifactId(null);
     }
@@ -135,14 +220,14 @@ export default function JobDetailPage() {
     if (socket && isConnected && jobId) {
       joinJob(jobId);
 
-      const handleLog = (logLine: string) => {
+      const handleLog = () => {
         // Append a pseudo-log (server doesn't send full object, just string)
         // In a real implementation, the server should send { line, sequence, stream }
         // For now, we'll refetch logs
         fetchLogs();
       };
 
-      const handleJobUpdate = (data: any) => {
+      const handleJobUpdate = (data: { jobId: string; type?: string }) => {
         if (data.jobId === jobId) {
           fetchJob(); // refresh job status
           if (data.type === "artifact") {
@@ -157,6 +242,7 @@ export default function JobDetailPage() {
       return () => {
         socket.off("log", handleLog);
         socket.off("job-update", handleJobUpdate);
+        leaveJob(jobId);
       };
     }
   }, [
@@ -164,6 +250,7 @@ export default function JobDetailPage() {
     isConnected,
     jobId,
     joinJob,
+    leaveJob,
     fetchJob,
     fetchLogs,
     fetchArtifacts,
@@ -180,9 +267,16 @@ export default function JobDetailPage() {
     try {
       await stopJob(jobId);
       await fetchJob();
-      alert("Job stopped");
-    } catch (e: any) {
-      alert(e.message);
+      toast({
+        title: "Job Stopped",
+        description: "The job was stopped successfully.",
+      });
+    } catch (e: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Failed to Stop Job",
+        description: e instanceof Error ? e.message : "An error occurred while stopping the job.",
+      });
     } finally {
       setStopping(false);
     }
@@ -353,11 +447,19 @@ export default function JobDetailPage() {
               )
             </CardDescription>
           </div>
-          <Button size="sm" variant="outline" onClick={() => fetchLogs()}>
+          <Button size="sm" variant="outline" onClick={() => fetchLogs(0)}>
             Refresh
           </Button>
         </CardHeader>
         <CardContent>
+          {logsError && (
+            <div className="flex items-center justify-between gap-3 p-3 mb-4 rounded-md border border-destructive/20 bg-destructive/10 text-destructive text-sm">
+              <span>{logsError}</span>
+              <Button size="sm" variant="outline" className="h-8 bg-background hover:bg-muted font-medium border-destructive/20 hover:text-destructive hover:bg-destructive/5" onClick={() => fetchLogs()}>
+                Retry
+              </Button>
+            </div>
+          )}
           <div className="log-viewer">
             {logs.length === 0 ? (
               <div className="text-muted-foreground text-sm">
@@ -387,6 +489,14 @@ export default function JobDetailPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {artifactsError && (
+            <div className="flex items-center justify-between gap-3 p-3 mb-4 rounded-md border border-destructive/20 bg-destructive/10 text-destructive text-sm">
+              <span>{artifactsError}</span>
+              <Button size="sm" variant="outline" className="h-8 bg-background hover:bg-muted font-medium border-destructive/20 hover:text-destructive hover:bg-destructive/5" onClick={() => fetchArtifacts()}>
+                Retry
+              </Button>
+            </div>
+          )}
           {artifacts.length === 0 ? (
             <div className="text-muted-foreground text-sm">
               No artifacts yet

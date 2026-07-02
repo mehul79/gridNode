@@ -600,7 +600,7 @@ router.patch("/:id/status", requireAgentAuth, async (req, res) => {
       }).then(() => {
         console.log("[JOB] The email was appended to the queue");
       }).catch((err) => {
-        console.error("[JOB] Email wasn't queued")
+        console.error("[JOB] Email wasn't queued", err);
       })
       ;
     }

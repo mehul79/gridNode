@@ -36,7 +36,8 @@ export async function requireAgentAuth(req: Request, res: Response, next: NextFu
     (req as any).agentSession = agentSession;
     (req as any).machine = agentSession.machine;
     next();
-  } catch {
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ message: "Agent auth failed" });
   }
 }

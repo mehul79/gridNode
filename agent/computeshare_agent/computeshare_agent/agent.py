@@ -221,12 +221,13 @@ def report_status(job_id, status, reason=None, allocation=None):
     if allocation:
         payload["actual_allocation"] = allocation
     try:
-        requests.patch(
+        resp = requests.patch(
             f"{BACKEND_URL}/api/jobs/{job_id}/status",
             json=payload,
             headers=headers(),
             timeout=5
         )
+        resp.raise_for_status()
     except Exception as e:
         print(f"  [WARN] Status report failed: {e}")
 
