@@ -59,7 +59,7 @@ def main():
     finally:
         # Cleanup volume
         if dep_volume:
-            subprocess.run(["docker", "volume", "rm", dep_volume], check=False, capture_output=True)
+            docker_runner.remove_volume(dep_volume)
 
 if __name__ == "__main__":
     main()

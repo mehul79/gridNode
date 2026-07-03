@@ -37,6 +37,17 @@ def cleanup(workspace):
         print(f"  Cleaned up {workspace}")
 
 
+def cleanup_leftover_workspaces():
+    try:
+        if os.path.exists(WORKSPACE_ROOT):
+            for item in os.listdir(WORKSPACE_ROOT):
+                path = os.path.join(WORKSPACE_ROOT, item)
+                if os.path.isdir(path) and item.startswith("job_"):
+                    shutil.rmtree(path)
+    except Exception as e:
+        print(f"  [Startup Cleanup] Error cleaning up leftover workspaces: {e}")
+
+
 # GitHub blob URLs -> converted to raw URLs automatically
 def normalise_github_url(url):
     """

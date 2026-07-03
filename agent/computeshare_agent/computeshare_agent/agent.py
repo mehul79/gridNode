@@ -99,20 +99,32 @@ def _duration_to_seconds(tier: str) -> int:
 _current_container = None          # track running container for reclaim
 _current_workspace = None          # track active workspace for teardown
 _current_job_id = None             # track active job for teardown
+_current_dep_volume = None         # track active dependency volume for cleanup
 _reclaim_flag = threading.Event()  # set by heartbeat thread on reclaim signal
 
 
 def handle_shutdown(signum, frame):
+    global _current_container, _current_workspace, _current_job_id, _current_dep_volume
     print("\n[SHUTDOWN] Signal received. Commencing graceful teardown...")
     if _current_container:
         print(f"  -> Stopping container: {_current_container}")
         docker_runner.stop_container(_current_container)
+        _current_container = None
+    if _current_dep_volume:
+        print(f"  -> Removing volume: {_current_dep_volume}")
+        docker_runner.remove_volume(_current_dep_volume)
+        _current_dep_volume = None
     if _current_workspace:
         print(f"  -> Cleaning up workspace: {_current_workspace}")
         workspace.cleanup(_current_workspace)
+        _current_workspace = None
     if _current_job_id:
         print(f"  -> Notifying backend of job interruption...")
-        report_status(_current_job_id, "failed", reason="Provider node shut down abruptly")
+        if _reclaim_flag.is_set():
+            report_status(_current_job_id, "preempted", reason="Owner reclaimed machine")
+        else:
+            report_status(_current_job_id, "failed", reason="Provider node shut down abruptly")
+        _current_job_id = None
     print("[SHUTDOWN] Teardown complete. Exiting.")
     sys.exit(0)
 
@@ -176,8 +188,7 @@ def heartbeat_loop():
             if data.get("reclaim"):
                 print("\n  [RECLAIM] Owner requested remote stop — terminating agent")
                 _reclaim_flag.set()
-                # Trigger the graceful shutdown logic we built earlier
-                handle_shutdown(signal.SIGTERM, None)
+                os.kill(os.getpid(), signal.SIGTERM)
 
         except Exception as e:
             print(f"  [WARN] Heartbeat failed: {e}")
@@ -233,8 +244,10 @@ def report_status(job_id, status, reason=None, allocation=None):
 
 
 def execute_job(job):
-    global _current_container, _current_workspace, _current_job_id
+    global _current_container, _current_workspace, _current_job_id, _current_dep_volume
     job_id = job["job_id"]
+    container_name = f"gridnode_job_{job_id}"
+    _current_container = container_name
     _current_job_id = job_id
     ws = None
 
@@ -341,18 +354,42 @@ def execute_job(job):
         _reclaim_flag.clear()
         
         print(f"  [execute_job] Starting Docker container")
-        process, container_name, _ = docker_runner.run(job, ws, allocation)
-        _current_container = container_name
+        process, container_name, dep_volume = docker_runner.run(job, ws, allocation)
+        _current_dep_volume = dep_volume
         print(f"  [execute_job] Container started: {container_name}")
 
         streamer = LogStreamer(job_id, BACKEND_URL, headers())
-        streamer.start()
-        print(f"  [execute_job] Log streamer started — waiting for container to finish")
-        exit_code = streamer.ingest(process)
+        try:
+            streamer.start(process)
+            print(f"  [execute_job] Log streamer started — waiting for container to finish")
+
+            start_time = time.time()
+            timeout = job.get("timeout_seconds", 3600)
+            exit_code = None
+
+            while True:
+                if _reclaim_flag.is_set():
+                    print(f"  [execute_job] Reclaim detected in polling loop")
+                    docker_runner.stop_container(container_name)
+                    break
+
+                exit_code = process.poll()
+                if exit_code is not None:
+                    break
+
+                elapsed = time.time() - start_time
+                if elapsed > timeout:
+                    print(f"  [execute_job] Job timeout of {timeout}s exceeded")
+                    docker_runner.stop_container(container_name)
+                    exit_code = -1
+                    break
+
+                time.sleep(0.5)
+        finally:
+            streamer.stop()
 
         print(f"  [execute_job] Container exited with code: {exit_code}")
         print(f"  [execute_job] Reclaim flag set: {_reclaim_flag.is_set()}")
-        _current_container = None
 
         if _reclaim_flag.is_set():
             print(f"  [execute_job] Reporting preempted")
@@ -377,28 +414,34 @@ def execute_job(job):
         print(f"\n  [ERROR] Missing job field: {e}")
         print(f"  [ERROR] Available job keys: {list(job.keys())}")
         report_status(job_id, "failed", reason=f"Agent config error: missing field {e}")
-        _current_container = None
 
     except Exception as e:
         import traceback
         print(f"\n  [ERROR] Job {job_id} failed: {e}")
         print(traceback.format_exc())
         report_status(job_id, "failed", reason=str(e))
-        _current_container = None
 
     finally:
-        _current_container = None
-        _current_workspace = None
-        _current_job_id = None
-        if ws:
+        if _current_container:
+            docker_runner.stop_container(container_name)
+        if _current_dep_volume:
+            docker_runner.remove_volume(_current_dep_volume)
+            _current_dep_volume = None
+        if _current_workspace and ws:
             # set DEBUG_KEEP_WORKSPACE=1 to skip cleanup on failure for inspection
             if os.environ.get("DEBUG_KEEP_WORKSPACE") != "1":
                 workspace.cleanup(ws)
             else:
                 print(f"  [DEBUG] Skipping cleanup — workspace preserved at: {ws}")     
+        _current_container = None
+        _current_workspace = None
+        _current_job_id = None
 
 
 def run_agent():
+    docker_runner.cleanup_leftover_containers()
+    docker_runner.cleanup_leftover_volumes()
+    workspace.cleanup_leftover_workspaces()
     print("\nComputeShare Agent")
     print("==================")
 

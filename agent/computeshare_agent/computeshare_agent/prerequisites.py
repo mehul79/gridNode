@@ -133,5 +133,3 @@ def run_all_checks():
     check_gvisor()
     print("\n=== All checks passed ===\n")
     return {"gpu_available": gpu_available}
-
-run_all_checks()

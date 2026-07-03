@@ -85,9 +85,14 @@ def presign_artifact(job_id):
         "storagePath": f"mock_path/{filename}"
     })
 
+@app.route("/api/jobs/<job_id>/artifacts", methods=["POST"])
 @app.route("/api/jobs/<job_id>/artifacts/confirm", methods=["POST"])
 def confirm_artifact(job_id):
-    return jsonify({"ok": True})
+    data = request.json or {}
+    filename = data.get("filename")
+    if filename:
+        artifacts_received.append(filename)
+    return jsonify({"ok": True, "id": "mock_artifact_id"})
 
 @app.route("/api/mock/upload/<job_id>/<filename>", methods=["PUT"])
 def upload_artifact_mock(job_id, filename):

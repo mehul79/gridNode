@@ -214,9 +214,9 @@ def build_command(job, workspace, allocation, dep_volume=None):
 
     cmd = [
         "docker", "run",
+        "-d",
         "--runtime", runtime,
         "--name",        container_name,
-        "--rm",
         f"--cpus={allocation['cpu']}",
         f"--memory={allocation['ram_gb']}g",
         "--memory-swap", f"{allocation['ram_gb']}g",
@@ -274,13 +274,157 @@ def build_entrypoint(job, workspace, config):
         # runs a startup script from the repo
 
     if job_type == "data_processing":
+        notebook_path = job.get("notebook_path") or job.get("script_path") or ""
         return [
-            f"/workspace/repo/{job['notebook_path']}",
+            f"/workspace/repo/{notebook_path}",
             "--data-dir",   "/workspace/data",
             "--output-dir", "/workspace/outputs",
         ]
 
     raise ValueError(f"No entrypoint defined for job type: {job_type}")
+
+
+def stop_container(container_name):
+    subprocess.run(
+        ["docker", "stop", "--time", "5", container_name],
+        capture_output=True
+    )
+    subprocess.run(
+        ["docker", "rm", container_name],
+        capture_output=True
+    )
+
+
+def cleanup_leftover_containers():
+    print("Cleaning up leftover gridnode containers...")
+    try:
+        res = subprocess.run(
+            ["docker", "ps", "-a", "--filter", "name=gridnode_job_", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True
+        )
+        if res.returncode == 0:
+            containers = [c.strip() for c in res.stdout.splitlines() if c.strip().startswith("gridnode_job_")]
+            for container in containers:
+                print(f"Force removing leftover container: {container}")
+                subprocess.run(["docker", "rm", "-f", container], capture_output=True)
+    except Exception as e:
+        print(f"Error cleaning up leftover containers: {e}")
+
+
+def remove_volume(volume_name):
+    if volume_name:
+        subprocess.run(["docker", "volume", "rm", volume_name], capture_output=True)
+
+
+def cleanup_leftover_volumes():
+    try:
+        res = subprocess.run(
+            ["docker", "volume", "ls", "-q", "--filter", "name=deps_"],
+            capture_output=True, text=True
+        )
+        if res.returncode == 0:
+            names = res.stdout.strip().split()
+            for name in names:
+                subprocess.run(["docker", "volume", "rm", name], capture_output=True)
+    except Exception as e:
+        print(f"  [Startup Cleanup] Error cleaning up leftover volumes: {e}")
+
+
+class DetachedContainerProcess:
+    def __init__(self, log_process, wait_process, container_name):
+        self.log_process = log_process
+        self.wait_process = wait_process
+        self.container_name = container_name
+        self.stdout = log_process.stdout
+        self.stderr = log_process.stderr
+        self._exit_code = None
+
+    @property
+    def returncode(self):
+        return self._exit_code
+
+    def poll(self):
+        if self._exit_code is not None:
+            return self._exit_code
+        
+        status = self.wait_process.poll()
+        if status is not None:
+            try:
+                out, _ = self.wait_process.communicate()
+                self._exit_code = int(out.strip())
+            except Exception:
+                self._exit_code = self.wait_process.returncode or 0
+            
+            try:
+                self.log_process.wait(timeout=1)
+            except Exception:
+                pass
+
+            stop_container(self.container_name)
+            return self._exit_code
+        return None
+
+    def wait(self, timeout=None):
+        if self._exit_code is not None:
+            return self._exit_code
+
+        try:
+            out, _ = self.wait_process.communicate(timeout=timeout)
+            try:
+                self._exit_code = int(out.strip())
+            except Exception:
+                self._exit_code = self.wait_process.returncode or 0
+        except subprocess.TimeoutExpired:
+            raise
+        except Exception:
+            self._exit_code = self.wait_process.returncode or 0
+
+        try:
+            self.log_process.wait(timeout=1)
+        except Exception:
+            pass
+
+        stop_container(self.container_name)
+        return self._exit_code
+
+    def communicate(self, input=None, timeout=None):
+        log_out, log_err = self.log_process.communicate(input=input, timeout=timeout)
+
+        if self._exit_code is None:
+            try:
+                out, _ = self.wait_process.communicate(timeout=timeout)
+                try:
+                    self._exit_code = int(out.strip())
+                except Exception:
+                    self._exit_code = self.wait_process.returncode or 0
+            except Exception:
+                pass
+
+        stop_container(self.container_name)
+        return log_out, log_err
+
+    def terminate(self):
+        stop_container(self.container_name)
+        try:
+            self.log_process.terminate()
+        except Exception:
+            pass
+        try:
+            self.wait_process.terminate()
+        except Exception:
+            pass
+
+    def kill(self):
+        stop_container(self.container_name)
+        try:
+            self.log_process.kill()
+        except Exception:
+            pass
+        try:
+            self.wait_process.kill()
+        except Exception:
+            pass
 
 
 def run(job, workspace, allocation):
@@ -307,23 +451,37 @@ def run(job, workspace, allocation):
         print(f"  Network : {config['network']}")
         print(f"  Command : {' '.join(shlex.quote(c) for c in cmd)}\n")
 
-        process = subprocess.Popen(
+        # Synchronously run docker run -d
+        run_res = subprocess.run(
             cmd,
+            capture_output=True,
+            text=True
+        )
+        if run_res.returncode != 0:
+            raise RuntimeError(f"docker run -d failed:\n{run_res.stderr}")
+
+        # Start wait process
+        wait_process = subprocess.Popen(
+            ["docker", "wait", container_name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        # Start logs process
+        log_process = subprocess.Popen(
+            ["docker", "logs", "-f", container_name],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            errors="replace",
             bufsize=1
         )
+
+        process = DetachedContainerProcess(log_process, wait_process, container_name)
         return process, container_name, dep_volume if has_deps else None
 
     except Exception:
         if has_deps:
             subprocess.run(["docker", "volume", "rm", dep_volume], capture_output=True)
-        raise            
-
-
-def stop_container(container_name):
-    subprocess.run(
-        ["docker", "stop", "--time", "5", container_name],
-        capture_output=True
-    )
+        raise

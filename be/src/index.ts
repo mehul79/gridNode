@@ -10,6 +10,13 @@ import { startSweeper, stopSweeper } from "./lib/sweeper";
 import { emailWorker } from "./queues/email.worker";
 import { connection as redisConnection } from "./queues/connection";
 
+let sweeperInterval: NodeJS.Timeout | null = null;
+
+// Prevent unhandled exceptions from Redis crashes/connection drops
+redisConnection.on("error", (err) => {
+  console.error("[Redis Client Error] Connection error in index.ts:", err);
+});
+
 const app = express();
 const server = http.createServer(app);
 
@@ -42,11 +49,15 @@ initSocket(server);
 // Start
 server.listen(3005, () => {
   console.log("Server running on 3005");
-  startSweeper();
+  sweeperInterval = startSweeper();
 });
 
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received — shutting down");
+  if (sweeperInterval) {
+    clearInterval(sweeperInterval);
+    sweeperInterval = null;
+  }
   stopSweeper();
   await emailWorker.close();
   redisConnection.quit();
@@ -54,6 +65,10 @@ process.on("SIGTERM", async () => {
 })
 
 process.on("SIGINT", async () => {
+  if (sweeperInterval) {
+    clearInterval(sweeperInterval);
+    sweeperInterval = null;
+  }
   stopSweeper();
   await emailWorker.close();
   redisConnection.quit();

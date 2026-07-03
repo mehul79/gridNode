@@ -19,27 +19,38 @@ class LogStreamer:
         self._stop_event = threading.Event()
         self._flush_thread = threading.Thread(target=self._flush_loop, daemon=True)
 
-    def start(self):
+    def start(self, process):
+        self._read_thread = threading.Thread(target=self._read_loop, args=(process,), daemon=True)
+        self._read_thread.start()
         self._flush_thread.start()
 
-    def ingest(self, process):
-        """
-        Call this from the main thread.
-        Reads lines from the container process until it exits.
-        """
+    def _read_loop(self, process):
         for raw_line in iter(process.stdout.readline, ""):
+            if self._stop_event.is_set():
+                break
             line = raw_line.rstrip()
             if not line:
                 continue
             entry = {"line": line, "ts": time.time()}
             with self._lock:
+                if len(self._buffer) >= 10000:
+                    self._buffer.pop(0)
                 self._buffer.append(entry)
 
+    def stop(self):
         self._stop_event.set()
-        self._flush_thread.join(timeout=10)
-        self._flush()           # final flush after process exits
-
-        return process.wait()   # returns exit code
+        if hasattr(self, "_read_thread") and self._read_thread.is_alive():
+            self._read_thread.join(timeout=10)
+        if self._flush_thread.is_alive():
+            self._flush_thread.join(timeout=10)
+        
+        while True:
+            with self._lock:
+                if not self._buffer:
+                    break
+            success = self._flush()
+            if not success:
+                break
 
     def _flush_loop(self):
         while not self._stop_event.is_set():
@@ -49,7 +60,7 @@ class LogStreamer:
     def _flush(self):
         with self._lock:
             if not self._buffer:
-                return
+                return True
             batch = self._buffer[:MAX_BATCH_SIZE]
 
         try:
@@ -62,5 +73,7 @@ class LogStreamer:
             resp.raise_for_status()
             with self._lock:
                 self._buffer = self._buffer[len(batch):]
+            return True
         except Exception as e:
             print(f"  [WARN] Log flush failed: {e}")
+            return False

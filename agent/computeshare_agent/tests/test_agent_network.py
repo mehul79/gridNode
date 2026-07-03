@@ -89,6 +89,70 @@ class TestLogStreamerRobustness(unittest.TestCase):
         self.assertEqual(len(self.streamer._buffer), 1)
         self.assertEqual(self.streamer._buffer[0]["line"], "log 2")
 
+    @patch("requests.post")
+    def test_log_streamer_buffer_cap(self, mock_post):
+        # We fill the buffer to 10000 items
+        self.streamer._buffer = [{"line": f"log {i}", "ts": 123} for i in range(10000)]
+        
+        # Mock process stdout
+        mock_proc = MagicMock()
+        mock_proc.stdout.readline.side_effect = ["new log\n", ""]
+        
+        self.streamer._read_loop(mock_proc)
+        
+        # Buffer length should still be 10000
+        self.assertEqual(len(self.streamer._buffer), 10000)
+        # Oldest log (log 0) should be popped, and new log appended at the end
+        self.assertEqual(self.streamer._buffer[0]["line"], "log 1")
+        self.assertEqual(self.streamer._buffer[-1]["line"], "new log")
+
+    @patch("requests.post")
+    def test_log_streamer_stop_loop_flush(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+        
+        # Populate buffer with 120 items (requires 3 flushes of max 50)
+        self.streamer._buffer = [{"line": f"log {i}", "ts": 123} for i in range(120)]
+        
+        # Join should return immediately because mock threads aren't running
+        self.streamer.stop()
+        
+        # All items should be flushed
+        self.assertEqual(len(self.streamer._buffer), 0)
+        # mock_post should be called 3 times
+        self.assertEqual(mock_post.call_count, 3)
+
+    @patch("requests.post")
+    def test_log_streamer_stop_loop_flush_stops_on_failure(self, mock_post):
+        mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
+        
+        # Populate buffer
+        self.streamer._buffer = [{"line": "log 1", "ts": 123}]
+        
+        # stop() should attempt to flush once, fail, and break
+        self.streamer.stop()
+        
+        # Buffer should still have the log
+        self.assertEqual(len(self.streamer._buffer), 1)
+        mock_post.assert_called_once()
+
+    @patch("requests.post")
+    def test_log_streamer_stop_loop_flush_more_than_100_batches(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+        
+        # 105 batches of 50 = 5250 items
+        self.streamer._buffer = [{"line": f"log {i}", "ts": 123} for i in range(5250)]
+        
+        self.streamer.stop()
+        
+        # All items should be flushed
+        self.assertEqual(len(self.streamer._buffer), 0)
+        # mock_post should be called 105 times (which is > 100)
+        self.assertEqual(mock_post.call_count, 105)
+
 
 class TestAgentReportStatus(unittest.TestCase):
     @patch("requests.patch")

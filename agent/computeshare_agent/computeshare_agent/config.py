@@ -1,8 +1,8 @@
 import os
 import json
 
-# Use current working directory for config to stay within workspace
-CONFIG_DIR  = os.path.join(os.getcwd(), ".computeshare")
+BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+CONFIG_DIR  = os.path.join(BASE_DIR, ".computeshare")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 

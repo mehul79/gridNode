@@ -58,7 +58,7 @@ def upload_all(job_id, workspace, backend_url, headers):
             
             # 2. Upload file to S3
             with open(filepath, "rb") as f:
-                put_resp = requests.put(upload_url, data=f)
+                put_resp = requests.put(upload_url, data=f, timeout=30)
                 put_resp.raise_for_status()
 
             # 3. Finalize and register with backend

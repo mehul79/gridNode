@@ -1,8 +1,7 @@
-import { PrismaClient, JobStatus } from "@prisma/client";
+import { JobStatus } from "@prisma/client";
+import { prisma } from "./db";
 
-const prisma = new PrismaClient();
-
-const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
+const HEARTBEAT_TIMEOUT_MS = 3 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 1000;
 const SESSION_STALE_MS = 10 * 60 * 1000;
 
@@ -14,7 +13,7 @@ const ACTIVE_JOB_STATUSES: JobStatus[] = [
 
 let sweepCount = 0;
 
-async function sweep() {
+export async function sweep() {
     sweepCount++;
     const sweepId = `sweep_${sweepCount}`;
     const now = new Date();
@@ -25,13 +24,17 @@ async function sweep() {
     try {
         const deadMachines = await prisma.machine.findMany({
             where: {
-                lastHeartbeatAt: { lt: cutoff },
                 status: { not: "offline" },
+                OR: [
+                    { lastHeartbeatAt: { lt: cutoff } },
+                    { lastHeartbeatAt: null, createdAt: { lt: cutoff } }
+                ]
             },
             select: {
                 id: true,
                 ownerId: true,
                 lastHeartbeatAt: true,
+                createdAt: true,
                 status: true,
                 trustScore: true,
                 jobs: {
@@ -48,7 +51,7 @@ async function sweep() {
         }
 
         for (const machine of deadMachines) {
-            const silentFor = now.getTime() - (machine.lastHeartbeatAt?.getTime() ?? 0);
+            const silentFor = now.getTime() - (machine.lastHeartbeatAt?.getTime() ?? machine.createdAt.getTime());
             const silentSec = Math.round(silentFor / 1000);
 
             console.log(
@@ -57,48 +60,61 @@ async function sweep() {
             );
 
             await prisma.$transaction(async (tx) => {
+                let actuallyFailedJobsCount = 0;
                 for (const job of machine.jobs) {
-                    await tx.job.update({
-                        where: { id: job.id },
+                    const updateResult = await tx.job.updateMany({
+                        where: {
+                            id: job.id,
+                            status: { in: ACTIVE_JOB_STATUSES },
+                        },
                         data: { status: JobStatus.failed },
                     });
 
-                    await tx.jobEvent.create({
-                        data: {
-                            jobId: job.id,
-                            type: "sweeper_failed",
-                            payload: {
-                                reason: "machine_heartbeat_timeout",
-                                machineId: machine.id,
-                                silentForSeconds: silentSec,
-                                lastHeartbeatAt: machine.lastHeartbeatAt?.toISOString() ?? null,
-                                previousStatus: job.status,
+                    if (updateResult.count > 0) {
+                        actuallyFailedJobsCount++;
+                        await tx.jobEvent.create({
+                            data: {
+                                jobId: job.id,
+                                type: "sweeper_failed",
+                                payload: {
+                                    reason: "machine_heartbeat_timeout",
+                                    machineId: machine.id,
+                                    silentForSeconds: silentSec,
+                                    lastHeartbeatAt: machine.lastHeartbeatAt?.toISOString() ?? null,
+                                    previousStatus: job.status,
+                                }
+                            },
+                        });
 
-                            }
-                        },
-                    });
-
-                    console.log(`[Sweeper] Job ${job.id} (was: ${job.status}) → failed`);
+                        console.log(`[Sweeper] Job ${job.id} (was: ${job.status}) → failed`);
+                    } else {
+                        console.log(`[Sweeper] Job ${job.id} status update skipped (already updated or status changed)`);
+                    }
                 }
 
-                await tx.machine.update({
-                    where: { id: machine.id },
-                    data: { 
-                        status: "offline",
-                        trustScore: Math.max(0, machine.trustScore - 15.0),
-                        totalJobsFailed: { increment: machine.jobs.length }
-                    },
+                const machineUpdateData: any = {
+                    status: "offline",
+                };
+                if (actuallyFailedJobsCount > 0) {
+                    machineUpdateData.trustScore = Math.max(0, machine.trustScore - 15.0);
+                    machineUpdateData.totalJobsFailed = { increment: actuallyFailedJobsCount };
+                }
+
+                const machineUpdateResult = await tx.machine.updateMany({
+                    where: { id: machine.id, status: { not: "offline" } },
+                    data: machineUpdateData,
                 });
 
-                await tx.agentSession.updateMany({
-                    where: {
-                        machineId: machine.id,
-                        status: "active",
-                    },
-                    data: { status: "revoked" },
-                });
-
-                console.log(`[Sweeper] Machine ${machine.id} → offline`);
+                if (machineUpdateResult.count > 0) {
+                    await tx.agentSession.updateMany({
+                        where: {
+                            machineId: machine.id,
+                            status: "active",
+                        },
+                        data: { status: "revoked" },
+                    });
+                    console.log(`[Sweeper] Machine ${machine.id} → offline`);
+                }
             });
         }
 
@@ -119,32 +135,38 @@ async function sweep() {
 
             await prisma.$transaction(async (tx) => {
                 for (const job of orphanedJobs) {
-                    await tx.job.update({
-                        where: { id: job.id },
+                    const updateResult = await tx.job.updateMany({
+                        where: {
+                            id: job.id,
+                            status: { in: ACTIVE_JOB_STATUSES },
+                        },
                         data: { status: JobStatus.failed },
                     });
 
-                    if (job.machineId) {
-                        await tx.machine.update({
-                            where: { id: job.machineId },
-                            data: { totalJobsFailed: { increment: 1 } }
+                    if (updateResult.count > 0) {
+                        if (job.machineId) {
+                            await tx.machine.update({
+                                where: { id: job.machineId },
+                                data: { totalJobsFailed: { increment: 1 } }
+                            });
+                        }
+
+                        await tx.jobEvent.create({
+                            data: {
+                                jobId: job.id,
+                                type: "sweeper_failed",
+                                payload: {
+                                    reason: "orphaned_job_cleanup",
+                                    machineId: job.machineId,
+                                    previousStatus: job.status
+                                }
+                            },
                         });
+
+                        console.log(`[Sweeper] Orphaned job ${job.id} → failed`);
+                    } else {
+                        console.log(`[Sweeper] Orphaned job ${job.id} status update skipped (already updated or status changed)`);
                     }
-
-                    await tx.jobEvent.create({
-                        data: {
-                            jobId: job.id,
-                            type: "sweeper_failed",
-                            payload: {
-                                reason: "orphaned_job_cleanup",
-                                machineId: job.machineId,
-                                previousStatus: job.status
-                            }
-                        },
-                    });
-
-                    console.log(`[Sweeper] Orphaned job ${job.id} → failed`);
-
                 }
             });
         }
@@ -154,7 +176,10 @@ async function sweep() {
         const { count: expiredSessions } = await prisma.agentSession.updateMany({
             where: {
                 status: "active",
-                lastHeartbeatAt: { lt: sessionCutoff },
+                OR: [
+                    { lastHeartbeatAt: { lt: sessionCutoff } },
+                    { lastHeartbeatAt: null, createdAt: { lt: sessionCutoff } }
+                ]
             },
             data: { status: "revoked" },
         });
@@ -172,10 +197,10 @@ async function sweep() {
 
 let intervalHandle: NodeJS.Timeout | null = null;
 
-export function startSweeper() {
+export function startSweeper(): NodeJS.Timeout | null {
     if (intervalHandle) {
         console.warn("[Sweeper] Already running — ignoring duplicate start");
-        return;
+        return intervalHandle;
     }
     console.log(
         `[Sweeper] Starting — ` +
@@ -184,6 +209,7 @@ export function startSweeper() {
     );
     sweep();
     intervalHandle = setInterval(sweep, SWEEP_INTERVAL_MS);
+    return intervalHandle;
 }
 
 export function stopSweeper() {
