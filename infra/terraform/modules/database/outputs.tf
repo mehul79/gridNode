@@ -1,0 +1,3 @@
+output "db_endpoint" { value = aws_db_instance.postgres.endpoint }
+output "db_name" { value = aws_db_instance.postgres.db_name }
+output "ssm_password_arn" { value = aws_ssm_parameter.db_password.arn }
