@@ -1,0 +1,9 @@
+node_modules
+.npm
+.next
+.git
+*.log
+docker-compose*.yml
+.DS_Store
+.env
+.env.*

@@ -14,7 +14,15 @@ interface MachineStatusBadgeProps {
 }
 
 function MachineStatusBadge({ lastHeartbeatAt, status }: MachineStatusBadgeProps) {
-  const isRecent = lastHeartbeatAt && new Date(lastHeartbeatAt) > new Date(Date.now() - 5 * 60 * 1000);
+  if (status === "offline") {
+    return (
+      <Badge variant="destructive">
+        Offline
+      </Badge>
+    );
+  }
+
+  const isRecent = lastHeartbeatAt && new Date(lastHeartbeatAt) > new Date(Date.now() - 3 * 60 * 1000);
   
   if (!isRecent) {
     return (
