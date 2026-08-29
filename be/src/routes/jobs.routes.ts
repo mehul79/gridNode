@@ -564,7 +564,10 @@ router.patch("/:id/status", requireAgentAuth, async (req, res) => {
 
     const updated = await prisma.job.update({
       where: { id: jobId },
-      data: { status },
+      data: {
+        status,
+        ...(status === JobStatus.queued ? { machineId: null } : {})
+      },
     });
 
     if ((status === JobStatus.completed || status === JobStatus.failed) && updated.machineId) {

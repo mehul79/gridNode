@@ -9,6 +9,7 @@ import { initSocket } from "./sockets";
 import { startSweeper, stopSweeper } from "./lib/sweeper";
 import { emailWorker } from "./queues/email.worker";
 import { connection as redisConnection } from "./queues/connection";
+import promClient from "prom-client";
 
 let sweeperInterval: NodeJS.Timeout | null = null;
 
@@ -17,8 +18,35 @@ redisConnection.on("error", (err) => {
   console.error("[Redis Client Error] Connection error in index.ts:", err);
 });
 
+// Setup Prometheus Metrics
+promClient.collectDefaultMetrics();
+
+const httpRequestDurationMicroseconds = new promClient.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'code'],
+  buckets: [0.1, 0.3, 0.5, 1, 1.5, 2, 5]
+});
+
 const app = express();
 const server = http.createServer(app);
+
+// Metrics middleware
+app.use((req, res, next) => {
+  const end = httpRequestDurationMicroseconds.startTimer();
+  res.on('finish', () => {
+    if (req.path !== '/metrics') {
+      end({ method: req.method, route: req.route?.path || req.path, code: res.statusCode });
+    }
+  });
+  next();
+});
+
+// Expose /metrics
+app.get("/metrics", async (req, res) => {
+  res.set("Content-Type", promClient.register.contentType);
+  res.end(await promClient.register.metrics());
+});
 
 // CORS
 app.use(
@@ -39,6 +67,10 @@ app.use(express.json());
 app.use("/api", router);
 
 // Health
+app.get("/health", (_, res) => {
+  res.send("API running 🚀");
+});
+
 app.get("/", (_, res) => {
   res.send("API running 🚀");
 });

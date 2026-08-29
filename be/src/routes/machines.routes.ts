@@ -136,7 +136,7 @@ router.post("/:id/heartbeat", requireAgentAuth, async (req, res) => {
     const now = new Date();
 
     const preemptedJob = await prisma.job.findFirst({
-      where: { machineId: id, status: JobStatus.preempted }
+      where: { machineId: id, status: { in: [JobStatus.preempted, JobStatus.cancelled] } }
     });
 
     console.log(`[heartbeat] machine=${id} status=${status} preemptedJob=${preemptedJob?.id ?? "none"} reclaim=${!!preemptedJob}`);
@@ -147,7 +147,7 @@ router.post("/:id/heartbeat", requireAgentAuth, async (req, res) => {
       status: (status === "running" || status === "idle") ? status : "idle"
     };
 
-    await prisma.$transaction([
+    const txs: any[] = [
       prisma.agentSession.update({
         where: { id: agentSession.id },
         data: { lastHeartbeatAt: now },
@@ -156,7 +156,16 @@ router.post("/:id/heartbeat", requireAgentAuth, async (req, res) => {
         where: { id: agentSession.machineId },
         data: updateData,
       }),
-    ]);
+    ];
+    if (status === "idle") {
+      txs.push(
+        prisma.job.updateMany({
+          where: { machineId: id, status: { in: [JobStatus.preempted, JobStatus.cancelled] } },
+          data: { machineId: null }
+        })
+      );
+    }
+    await prisma.$transaction(txs);
 
     res.json({ 
       ok: true, 
