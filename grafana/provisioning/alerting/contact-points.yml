@@ -1,0 +1,10 @@
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: 'Discord-Webhook'
+    receivers:
+      - uid: 'discord-receiver-1'
+        type: discord
+        settings:
+          url: 'https://discord.com/api/webhooks/PLACEHOLDER_WEBHOOK_URL'
+        disableResolveMessage: false

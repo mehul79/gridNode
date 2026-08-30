@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "/etc/prometheus/alert_rules.yml"
+
+scrape_configs:
+  - job_name: "gridnode_backend"
+    metrics_path: "/metrics"
+    static_configs:
+      # In this setup, we assume the backend and prometheus run on the same docker network or host.
+      # If deployed together via docker-compose, 'backend:3005' works.
+      # Since they might be in separate compose files, we use 'host.docker.internal' or the host IP.
+      # Because docker-compose.monitoring.yml might not be on the same network, we use the EC2 private IP 
+      # or just assume they share a network. For simplicity in a single-host setup, we can use 172.17.0.1 (docker0) 
+      # or if they join the same network, just the service name. Let's use the local IP.
+      - targets: ["host.docker.internal:3005", "172.17.0.1:3005"]
+  - job_name: "postgres_exporter"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
