@@ -1,56 +1,63 @@
 #!/bin/bash
 set -e
 
-echo ""
-echo "ComputeShare Agent — Installer"
-echo "=============================="
-echo ""
+echo "Installing GridNode Compute Agent..."
 
-# Check Python
-if ! command -v python3 &>/dev/null; then
-    echo "[ERROR] Python 3 is not installed."
-    echo "  Fix: https://www.python.org/downloads/"
+# Install gVisor (runsc) if not present
+if ! command -v runsc &> /dev/null; then
+    echo "Installing gVisor..."
+    URL="https://storage.googleapis.com/gvisor/releases/release/latest/x86_64"
+    curl -sSL --retry 5 "$URL/runsc" -o /usr/local/bin/runsc
+    chmod a+rx /usr/local/bin/runsc
+fi
+
+# Ensure docker is installed
+if ! command -v docker &> /dev/null; then
+    echo "Docker is required but not installed. Please install Docker first."
     exit 1
 fi
 
-PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-REQUIRED="3.9"
-
-if python3 -c "import sys; exit(0 if sys.version_info >= (3,9) else 1)"; then
-    echo "  Python $PYTHON_VERSION ... OK"
-else
-    echo "[ERROR] Python $PYTHON_VERSION found, but 3.9+ is required."
-    exit 1
+# Create unprivileged system user for the agent
+echo "Creating computeshare system user..."
+if ! id "computeshare" &>/dev/null; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin computeshare
 fi
 
-# Check Docker
-if ! command -v docker &>/dev/null; then
-    echo "[ERROR] Docker is not installed."
-    echo "  Fix: https://docs.docker.com/get-docker/"
-    exit 1
-fi
-echo "  Docker ... OK"
+# IMPORTANT SECURITY CAVEAT: 
+# The agent requires access to the Docker daemon to spawn jobs.
+# Adding the computeshare user to the docker group effectively grants it root-equivalent privileges.
+# This violates strict least-privilege, but is required until rootless Docker or a proxy is used.
+usermod -aG docker computeshare
 
-# one-time setup — downloads and registers the gVisor runtime
-curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list
-sudo apt-get update && sudo apt-get install -y runsc
-sudo runsc install   # registers runsc as a Docker runtime
-sudo systemctl restart docker
+# Install Agent Binary
+mkdir -p /opt/computeshare
+# (Assuming the binary is downloaded or copied here during an actual install step)
+cp computeshare-agent /opt/computeshare/
+chown -R computeshare:computeshare /opt/computeshare
+chmod +x /opt/computeshare/computeshare-agent
 
-echo "  Installing agent binary..."
-if [ -f "./dist/computeshare-agent" ]; then
-    sudo cp ./dist/computeshare-agent /usr/local/bin/computeshare-agent
-    sudo chmod +x /usr/local/bin/computeshare-agent
-else
-    echo "[ERROR] Binary not found. Run ./build.sh first (or download the release binary)."
-    exit 1
-fi
+# Create systemd service
+cat << 'UNIT' > /etc/systemd/system/computeshare-agent.service
+[Unit]
+Description=GridNode Compute Agent
+After=network.target docker.service
+Requires=docker.service
 
-echo ""
-echo "=============================="
-echo "  Installation complete."
-echo ""
-echo "  Next step:"
-echo "  computeshare-agent start --token <your-token-from-dashboard>"
-echo ""
+[Service]
+Type=simple
+User=computeshare
+Group=computeshare
+ExecStart=/opt/computeshare/computeshare-agent
+Restart=always
+RestartSec=5
+WorkingDirectory=/opt/computeshare
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable computeshare-agent
+systemctl restart computeshare-agent
+
+echo "Installation complete."

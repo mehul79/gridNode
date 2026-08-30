@@ -276,7 +276,7 @@ def execute_job(job):
 
         if not viable:
             print(f"  [DEFER] {reason}")
-            report_status(job_id, "deferred", reason=reason)
+            report_status(job_id, "queued", reason=reason)
             return
 
         report_status(job_id, "running", allocation=allocation)
