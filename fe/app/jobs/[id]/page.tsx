@@ -14,7 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowLeft, Download, Square } from "lucide-react";
+import { Loader2, ArrowLeft, Download, Square, Terminal } from "lucide-react";
 import Link from "next/link";
 import {
   Job,
@@ -316,261 +316,193 @@ export default function JobDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/jobs">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Jobs
-            </Link>
-          </Button>
-          <h1 className="text-3xl font-bold">Job Details</h1>
-          <div className="flex items-center space-x-4">
-            <Badge variant="outline" className="capitalize">
-              {job.type}
-            </Badge>
+      <div className="flex items-center justify-between border-b border-border pb-4">
+        <div className="space-y-1">
+          <Link href="/jobs" className="text-[10px] uppercase font-mono text-muted-foreground hover:text-primary transition-colors flex items-center gap-1 mb-2">
+            &lt;- Back_To_Queue
+          </Link>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold uppercase tracking-wider text-foreground">JOB_{job.id.substring(0,8)}</h1>
             <StatusBadge status={job.status} />
+          </div>
+          <div className="text-[10px] font-mono text-muted-foreground uppercase">
+            {job.type.replace('_', ' ')} // {job.id}
           </div>
         </div>
         {canStop && (
-          <Button
-            variant="destructive"
+          <button
             onClick={handleStop}
             disabled={stopping}
+            className="flex items-center gap-2 bg-destructive/10 text-destructive border border-destructive/50 px-4 py-2 text-xs font-mono uppercase tracking-wider hover:bg-destructive hover:text-destructive-foreground transition-colors"
           >
-            {stopping && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            <Square className="mr-2 h-4 w-4" />
-            Stop Job
-          </Button>
+            {stopping && <Loader2 className="h-3 w-3 animate-spin" />}
+            <Square className="h-3 w-3" />
+            Halt Execution
+          </button>
         )}
       </div>
 
-      {/* Job Info */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Job Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <span className="font-medium">Repository:</span>{" "}
-              <a
-                href={job.repoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                {job.repoUrl}
-              </a>
+      <div className="border border-border">
+        <div className="grid grid-cols-1 gap-px bg-border lg:grid-cols-12">
+          
+          {/* Metadata Panel */}
+          <div className="col-span-1 bg-card lg:col-span-4 flex flex-col">
+            <div className="p-4 border-b border-border bg-background">
+              <h2 className="text-[10px] uppercase tracking-widest text-muted-foreground font-mono">Job Specifications</h2>
             </div>
-
-            {job.command && (
+            <div className="p-4 space-y-4 font-mono text-xs">
               <div>
-                <span className="font-medium">Command:</span>
-                <code className="ml-2 bg-muted px-2 py-1 rounded text-sm">
-                  {job.command}
-                </code>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div>
-                <span className="font-medium">Resources:</span>
-                <ul className="text-sm text-muted-foreground list-disc list-inside">
-                  <li>CPU: {formatCpuTier(job.cpuTier)}</li>
-                  <li>Memory: {formatMemoryTier(job.memoryTier)}</li>
-                  <li>
-                    GPU: {formatGpuMemory(job.gpuMemoryTier)}
-                    {job.gpuVendor && job.gpuMemoryTier && (
-                      <span> ({job.gpuVendor})</span>
-                    )}
-                  </li>
-                </ul>
-              </div>
-              <div>
-                <span className="font-medium">Time Estimates:</span>
-                <ul className="text-sm text-muted-foreground list-disc list-inside">
-                  {job.estimatedDuration && (
-                    <li>
-                      Estimated Duration:{" "}
-                      {formatDurationTier(job.estimatedDuration)}
-                    </li>
-                  )}
-                </ul>
-              </div>
-            </div>
-
-            {job.kaggleDatasetUrl && (
-              <div className="pt-2 border-t">
-                <span className="font-medium">Kaggle Dataset:</span>{" "}
-                <a
-                  href={job.kaggleDatasetUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  {job.kaggleDatasetUrl}
+                <div className="text-muted-foreground mb-1 uppercase text-[10px]">Repository</div>
+                <a href={job.repoUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">
+                  {job.repoUrl}
                 </a>
               </div>
-            )}
-
-            <div className="text-sm text-muted-foreground pt-2 border-t">
-              <div>
-                Created:{" "}
-                {formatDistanceToNow(new Date(job.createdAt), {
-                  addSuffix: true,
-                })}
-              </div>
-              <div>
-                Updated:{" "}
-                {formatDistanceToNow(new Date(job.updatedAt), {
-                  addSuffix: true,
-                })}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Live Logs */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Live Logs</CardTitle>
-            <CardDescription>
-              Real-time stream (Socket:{" "}
-              {isConnected ? (
-                <span className="text-green-500">connected</span>
-              ) : (
-                <span className="text-red-500">disconnected</span>
+              
+              {job.command && (
+                <div>
+                  <div className="text-muted-foreground mb-1 uppercase text-[10px]">Command</div>
+                  <div className="bg-background border border-border p-2 break-all text-muted-foreground">
+                    $ {job.command}
+                  </div>
+                </div>
               )}
-              )
-            </CardDescription>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => fetchLogs(0)}>
-            Refresh
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {logsError && (
-            <div className="flex items-center justify-between gap-3 p-3 mb-4 rounded-md border border-destructive/20 bg-destructive/10 text-destructive text-sm">
-              <span>{logsError}</span>
-              <Button size="sm" variant="outline" className="h-8 bg-background hover:bg-muted font-medium border-destructive/20 hover:text-destructive hover:bg-destructive/5" onClick={() => fetchLogs()}>
-                Retry
-              </Button>
-            </div>
-          )}
-          <div className="log-viewer">
-            {logs.length === 0 ? (
-              <div className="text-muted-foreground text-sm">
-                No logs yet. Agent will stream logs here.
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-muted-foreground mb-1 uppercase text-[10px]">Resources</div>
+                  <div className="text-foreground">
+                    CPU: {formatCpuTier(job.cpuTier)}<br/>
+                    RAM: {formatMemoryTier(job.memoryTier)}<br/>
+                    GPU: {formatGpuMemory(job.gpuMemoryTier)} {job.gpuVendor && `(${job.gpuVendor})`}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground mb-1 uppercase text-[10px]">Duration</div>
+                  <div className="text-foreground">
+                    Est: {formatDurationTier(job.estimatedDuration) || "--"}<br/>
+                    T-{formatDistanceToNow(new Date(job.createdAt))}
+                  </div>
+                </div>
               </div>
-            ) : (
-              logs.map((log) => (
-                <div key={log.id} className={`log-line ${log.stream || ""}`}>
-                  <span className="text-xs text-muted-foreground mr-2">
-                    [{log.sequence} {log.stream || "stdout"}]
-                  </span>
-                  {log.line}
+
+              {job.kaggleDatasetUrl && (
+                <div>
+                  <div className="text-muted-foreground mb-1 uppercase text-[10px]">Kaggle Dataset</div>
+                  <a href={job.kaggleDatasetUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">
+                    {job.kaggleDatasetUrl}
+                  </a>
                 </div>
-              ))
-            )}
-            <div ref={logsEndRef} />
+              )}
+            </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Artifacts */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Artifacts</CardTitle>
-          <CardDescription>
-            Output files registered by the agent
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {artifactsError && (
-            <div className="flex items-center justify-between gap-3 p-3 mb-4 rounded-md border border-destructive/20 bg-destructive/10 text-destructive text-sm">
-              <span>{artifactsError}</span>
-              <Button size="sm" variant="outline" className="h-8 bg-background hover:bg-muted font-medium border-destructive/20 hover:text-destructive hover:bg-destructive/5" onClick={() => fetchArtifacts()}>
-                Retry
-              </Button>
-            </div>
-          )}
-          {artifacts.length === 0 ? (
-            <div className="text-muted-foreground text-sm">
-              No artifacts yet
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {artifacts.map((artifact) => (
-                <div
-                  key={artifact.id}
-                  className="flex items-center justify-between gap-3 p-3 rounded-md border"
-                >
-                  <div className="min-w-0">
-                    <div className="font-medium break-all">{artifact.filename}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {artifact.mimeType && `${artifact.mimeType} • `}
-                      {artifact.sizeBytes
-                        ? `${(artifact.sizeBytes / 1024).toFixed(1)} KB`
-                        : "Size unknown"}
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={downloadingArtifactId === artifact.id}
-                    onClick={() => downloadArtifact(artifact)}
-                  >
-                    {downloadingArtifactId === artifact.id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="mr-2 h-4 w-4" />
-                    )}
-                    Download
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Recent Events */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Job Events</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {events.length === 0 ? (
-            <div className="text-muted-foreground text-sm">No events</div>
-          ) : (
-            <div className="space-y-3">
-              {events.map((ev) => (
-                <div
-                  key={ev.id}
-                  className="text-sm border-b pb-2 last:border-0"
-                >
-                  <div className="flex items-center justify-between">
-                    <Badge variant="outline">{ev.type}</Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(ev.createdAt), {
-                        addSuffix: true,
-                      })}
-                    </span>
-                  </div>
-                  {ev.payload && (
-                    <pre className="mt-1 text-xs bg-muted p-2 rounded overflow-auto">
-                      {JSON.stringify(ev.payload, null, 2)}
-                    </pre>
+          {/* Terminal / Logs Panel */}
+          <div className="col-span-1 bg-background lg:col-span-8 flex flex-col h-[500px]">
+            <div className="flex items-center justify-between border-b border-border bg-card p-4">
+              <div className="flex items-center gap-3">
+                <h2 className="text-[10px] uppercase tracking-widest text-muted-foreground font-mono flex items-center gap-2">
+                  <Terminal className="h-3 w-3" /> Execution Output
+                </h2>
+                <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                  Socket: 
+                  {isConnected ? (
+                    <span className="text-primary animate-pulse">CONNECTED</span>
+                  ) : (
+                    <span className="text-destructive">DISCONNECTED</span>
                   )}
                 </div>
-              ))}
+              </div>
+              <button 
+                onClick={() => fetchLogs(0)}
+                className="text-[10px] uppercase font-mono text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Refresh_Stream
+              </button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            
+            <div className="flex-1 overflow-y-auto bg-background p-4 font-mono text-xs log-viewer" ref={logsEndRef}>
+              {logsError && (
+                <div className="text-destructive bg-destructive/10 border border-destructive/20 p-2 mb-4">
+                  ERR_FETCH_LOGS: {logsError}
+                </div>
+              )}
+              {logs.length === 0 && !logsError ? (
+                <div className="text-muted-foreground italic">Awaiting execution output...</div>
+              ) : (
+                logs.map((log) => (
+                  <div
+                    key={`${log.id}-${log.sequence}`}
+                    className={`log-line ${log.stream === "stderr" ? "text-warning" : "text-foreground"}`}
+                  >
+                    <span className="text-muted-foreground opacity-50 select-none mr-3">[{String(log.sequence).padStart(4, '0')}]</span>
+                    {log.line}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Artifacts Panel */}
+          <div className="col-span-1 bg-card lg:col-span-12 flex flex-col border-t border-border">
+            <div className="p-4 border-b border-border bg-background">
+              <h2 className="text-[10px] uppercase tracking-widest text-muted-foreground font-mono flex items-center gap-2">
+                <Download className="h-3 w-3" /> Job Artifacts
+              </h2>
+            </div>
+            <div className="p-4">
+              {artifactsError && (
+                <div className="text-destructive text-xs font-mono mb-4">
+                  ERR_FETCH_ARTIFACTS: {artifactsError}
+                </div>
+              )}
+              {artifacts.length === 0 && !artifactsError ? (
+                <div className="text-muted-foreground text-xs font-mono">No artifacts exported by this job.</div>
+              ) : (
+                <div className="flex flex-wrap gap-3">
+                  {artifacts.map((artifact) => (
+                    <div key={artifact.id} className="flex items-center gap-2 border border-border bg-background p-2 text-xs font-mono max-w-[300px]">
+                      <div className="truncate flex-1 text-foreground" title={artifact.filename}>{artifact.filename}</div>
+                      <div className="text-muted-foreground text-[10px] shrink-0">
+                        {artifact.sizeBytes ? `${(artifact.sizeBytes / 1024 / 1024).toFixed(2)} MB` : "-- MB"}
+                      </div>
+                      <button
+                        onClick={() => downloadArtifact(artifact)}
+                        disabled={downloadingArtifactId === artifact.id}
+                        className="text-primary hover:text-primary/80 disabled:opacity-50"
+                      >
+                        {downloadingArtifactId === artifact.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Events Panel */}
+          <div className="col-span-1 bg-background lg:col-span-12 flex flex-col border-t border-border">
+            <div className="p-4 border-b border-border bg-card">
+              <h2 className="text-[10px] uppercase tracking-widest text-muted-foreground font-mono">System Events</h2>
+            </div>
+            <div className="p-4">
+              {events.length === 0 ? (
+                <div className="text-muted-foreground text-xs font-mono">No events logged.</div>
+              ) : (
+                <div className="space-y-1">
+                  {events.map((event) => (
+                    <div key={event.id} className="flex items-center gap-3 text-xs font-mono">
+                      <span className="text-muted-foreground w-36 shrink-0">{formatDistanceToNow(new Date(event.createdAt))} ago</span>
+                      <span className="text-foreground uppercase w-32 shrink-0">{event.type}</span>
+                      <span className="text-muted-foreground truncate">{event.payload ? JSON.stringify(event.payload) : "--"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }

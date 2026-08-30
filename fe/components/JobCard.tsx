@@ -4,8 +4,8 @@ import Link from "next/link";
 import type { Job, MemoryTier, GpuMemoryTier } from "@/types/api";
 import StatusBadge from "./StatusBadge";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { formatDistanceToNow } from "date-fns";
+import { Terminal, Cpu, Database } from "lucide-react";
 
 interface JobCardProps {
   job: Job;
@@ -13,21 +13,12 @@ interface JobCardProps {
 }
 
 function formatMemoryTier(tier: MemoryTier): string {
-  return tier.replace("gb", "") + " GB";
+  return tier.replace("gb", "") + "GB";
 }
 
 function formatGpuMemory(tier: GpuMemoryTier | null): string {
-  if (!tier) return "None";
-  return tier.replace("gb", "") + " GB";
-}
-
-function formatCpuTier(tier: string): string {
-  const labels: Record<string, string> = {
-    light: "Light (2-4 cores)",
-    medium: "Medium (4-8 cores)",
-    heavy: "Heavy (8+ cores)",
-  };
-  return labels[tier] || tier;
+  if (!tier) return "--";
+  return tier.replace("gb", "") + "GB";
 }
 
 export default function JobCard({ job, onStop }: JobCardProps) {
@@ -35,88 +26,72 @@ export default function JobCard({ job, onStop }: JobCardProps) {
   const canStop = !isTerminal;
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between">
+    <div className="flex flex-col border border-border bg-card transition-colors hover:border-primary/50 relative overflow-hidden group">
+      {/* Decorative left accent line */}
+      <div className="absolute left-0 top-0 bottom-0 w-1 bg-border group-hover:bg-primary transition-colors" />
+      
+      <div className="flex flex-col p-5 pl-6">
+        <div className="flex items-start justify-between mb-4">
           <div className="space-y-1">
-            <CardTitle className="capitalize">{job.type}</CardTitle>
-            <CardDescription className="line-clamp-1">{job.repoUrl}</CardDescription>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-foreground">
+              {job.type.replace('_', ' ')}
+            </h3>
+            <div className="text-[10px] font-mono text-muted-foreground truncate max-w-[200px]">
+              ID: {job.id}
+            </div>
           </div>
           <StatusBadge status={job.status} />
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div>
-            <span className="text-muted-foreground">CPU:</span> {formatCpuTier(job.cpuTier)}
+
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs font-mono mb-4">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Cpu className="h-3 w-3" />
+            <span className="text-foreground">{job.cpuTier}/{formatMemoryTier(job.memoryTier)}</span>
           </div>
-          <div>
-            <span className="text-muted-foreground">RAM:</span> {formatMemoryTier(job.memoryTier)}
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span className="text-[10px] uppercase">GPU:</span>
+            <span className="text-primary">{formatGpuMemory(job.gpuMemoryTier)}</span>
           </div>
-          <div>
-            <span className="text-muted-foreground">GPU:</span> {formatGpuMemory(job.gpuMemoryTier)}
-            {job.gpuVendor && job.gpuMemoryTier && (
-              <span className="text-xs block text-muted-foreground">{job.gpuVendor}</span>
-            )}
+        </div>
+
+        <div className="space-y-2 mb-4 flex-grow">
+          <div className="bg-background border border-border p-2 rounded-none text-xs font-mono truncate text-muted-foreground">
+            <span className="text-foreground">REPO:</span> {job.repoUrl}
           </div>
-          {job.estimatedDuration && (
-            <div>
-              <span className="text-muted-foreground">Duration:</span> {
-                {
-                  lt1h: "< 1 hour",
-                  h1_6: "1-6 hours",
-                  h6_12: "6-12 hours",
-                  h12_24: "12-24 hours",
-                  gt24h: "24+ hours",
-                }[job.estimatedDuration] || job.estimatedDuration
-              }
+          {job.command && (
+            <div className="bg-background border border-border p-2 rounded-none text-[10px] font-mono truncate text-muted-foreground flex items-center gap-2">
+              <Terminal className="h-3 w-3" /> {job.command}
+            </div>
+          )}
+          {job.kaggleDatasetUrl && (
+            <div className="bg-background border border-border p-2 rounded-none text-[10px] font-mono truncate text-muted-foreground flex items-center gap-2">
+              <Database className="h-3 w-3" /> DATASET_ATTACHED
             </div>
           )}
         </div>
 
-        {/* Command */}
-        {job.command && (
-          <p className="text-sm">
-            <span className="text-muted-foreground">Command:</span>{" "}
-            <code className="bg-muted px-1 rounded text-xs truncate inline-block max-w-full">{job.command}</code>
-          </p>
-        )}
-
-        {/* Kaggle Dataset */}
-        {job.kaggleDatasetUrl && (
-          <p className="text-sm">
-            <span className="text-muted-foreground">Dataset:</span>{" "}
-            <a href={job.kaggleDatasetUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate inline-block max-w-full">
-              Kaggle
-            </a>
-          </p>
-        )}
-
-        <div className="text-xs text-muted-foreground">
-          Created {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-        </div>
-
-        <div className="flex items-center justify-between pt-2">
-          <div className="text-sm">
-            {job.logsCount > 0 && (
-              <span className="text-muted-foreground">{job.logsCount} log lines</span>
-            )}
-            {job.artifactsCount > 0 && (
-              <span className="ml-3 text-muted-foreground">{job.artifactsCount} artifacts</span>
-            )}
+        <div className="flex items-end justify-between mt-auto pt-4 border-t border-border">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-mono">
+            T-{formatDistanceToNow(new Date(job.createdAt))}
           </div>
           <div className="flex space-x-2">
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/jobs/${job.id}`}>Details</Link>
-            </Button>
+            <Link 
+              href={`/jobs/${job.id}`}
+              className="text-[10px] uppercase font-mono tracking-wider text-foreground hover:text-primary transition-colors px-3 py-1.5 border border-border bg-background hover:bg-card"
+            >
+              Inspect
+            </Link>
             {canStop && onStop && (
-              <Button size="sm" variant="destructive" onClick={() => onStop(job.id)}>
-                Stop
-              </Button>
+              <button 
+                onClick={() => onStop(job.id)}
+                className="text-[10px] uppercase font-mono tracking-wider text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors px-3 py-1.5 border border-destructive/50"
+              >
+                Halt
+              </button>
             )}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

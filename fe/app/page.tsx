@@ -3,49 +3,24 @@
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Briefcase, CheckSquare, Monitor, Plus } from "lucide-react";
+import { Loader2, Plus, Terminal, Activity, ArrowRight, Server, Cpu } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import StatusBadge from "@/components/StatusBadge";
 import type { Job, MemoryTier, GpuMemoryTier, DurationTier } from "@/types/api";
 
 function formatMemoryTier(tier: MemoryTier): string {
-  return tier.replace("gb", "") + " GB";
+  return tier.replace("gb", "") + "GB";
 }
 
 function formatGpuMemory(tier: GpuMemoryTier | null): string {
-  if (!tier) return "None";
-  return tier.replace("gb", "") + " GB";
-}
-
-function formatCpuTier(tier: string): string {
-  const labels: Record<string, string> = {
-    light: "Light (2-4 cores)",
-    medium: "Medium (4-8 cores)",
-    heavy: "Heavy (8+ cores)",
-  };
-  return labels[tier] || tier;
-}
-
-function formatDurationTier(tier: DurationTier | null): string {
-  if (!tier) return "";
-  const labels: Record<DurationTier, string> = {
-    lt1h: "< 1 hour",
-    h1_6: "1-6 hours",
-    h6_12: "6-12 hours",
-    h12_24: "12-24 hours",
-    gt24h: "24+ hours",
-  };
-  return labels[tier];
+  if (!tier) return "--";
+  return tier.replace("gb", "") + "GB";
 }
 
 export default function Dashboard() {
   const { data: session, isPending } = authClient.useSession();
   const router = useRouter();
-  const [stats, setStats] = useState<{ jobs: number; pendingApprovals: number; machines: number }>({ jobs: 0, pendingApprovals: 0, machines: 0 });
   const [jobs, setJobs] = useState<Job[]>([]);
 
   useEffect(() => {
@@ -72,173 +47,150 @@ export default function Dashboard() {
     }
   };
 
-  const pendingApprovalsCount = jobs.filter((j) => j.status === "pending_approval").length;
-
-  // Derive primary role for display based on machine ownership
+  const activeJobs = jobs.filter(j => !['completed', 'failed', 'cancelled', 'rejected'].includes(j.status));
+  const completedJobs = jobs.filter(j => j.status === 'completed');
 
   if (isPending) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
       </div>
     );
   }
 
-  if (!session) {
-    return null;
-  }
+  if (!session) return null;
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <div className="text-muted-foreground">
-            Welcome back, {session.user.name}
-          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">GridNode Console</h1>
+          <p className="text-sm text-muted-foreground font-mono mt-1">
+            USER_ID: {session.user.id.substring(0, 8)} | SESSION_ACTIVE
+          </p>
         </div>
+        <Link 
+          href="/jobs"
+          className="flex items-center gap-2 bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" />
+          <span>NEW_JOB</span>
+        </Link>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Jobs</CardTitle>
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{jobs.length}</div>
-          </CardContent>
-        </Card>
+      <div className="border border-border">
+        <div className="grid grid-cols-1 gap-px bg-border lg:grid-cols-12">
+          
+          {/* NETWORK PULSE PANEL */}
+          <div className="col-span-1 bg-background p-6 lg:col-span-3 flex flex-col gap-6">
+            <div>
+              <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">
+                <Activity className="h-4 w-4" /> Network Pulse
+              </h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col">
+                  <span className="font-mono text-3xl font-light">{jobs.length}</span>
+                  <span className="text-[10px] uppercase text-muted-foreground">Total Jobs</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-mono text-3xl font-light text-primary">{activeJobs.length}</span>
+                  <span className="text-[10px] uppercase text-muted-foreground">Active</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-mono text-xl font-light text-muted-foreground">{completedJobs.length}</span>
+                  <span className="text-[10px] uppercase text-muted-foreground">Completed</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-mono text-xl font-light text-warning">
+                    {jobs.filter(j => j.status === 'failed' || j.status === 'preempted').length}
+                  </span>
+                  <span className="text-[10px] uppercase text-muted-foreground">Failed/Intr</span>
+                </div>
+              </div>
+            </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Approvals</CardTitle>
-            <CheckSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{pendingApprovalsCount}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Registered Machines</CardTitle>
-            <Monitor className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground">View in Machines page</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col space-y-2">
-            <Button asChild className="w-full">
-              <Link href="/jobs">
-                <Plus className="mr-2 h-4 w-4" /> Create Job
+            <div className="mt-auto pt-6 border-t border-border">
+              <h3 className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Provider Tools</h3>
+              <Link href="/machines" className="group flex items-center justify-between border border-border p-3 hover:bg-card transition-colors">
+                <div className="flex items-center gap-3">
+                  <Server className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs font-mono uppercase">Manage Nodes</span>
+                </div>
+                <ArrowRight className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
               </Link>
-            </Button>
-            <Button asChild variant="outline" className="w-full">
-              <Link href="/jobs">View All Jobs</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Jobs */}
-      <div>
-        <h2 className="text-2xl font-bold mb-4">Recent Jobs</h2>
-        {jobs.length === 0 ? (
-          <Card>
-            <CardContent className="pt-6 text-center text-muted-foreground">
-              No jobs yet. Create your first job!
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {jobs.slice(0, 6).map((job) => (
-              <Card key={job.id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1">
-                      <CardTitle className="capitalize">{job.type}</CardTitle>
-                      <CardDescription className="truncate">{job.repoUrl}</CardDescription>
-                    </div>
-                    <StatusBadge status={job.status} />
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">CPU:</span> {formatCpuTier(job.cpuTier)}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">RAM:</span> {formatMemoryTier(job.memoryTier)}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">GPU:</span> {formatGpuMemory(job.gpuMemoryTier)}
-                      {job.gpuVendor && job.gpuMemoryTier && (
-                        <span className="text-xs block text-muted-foreground">{job.gpuVendor}</span>
-                      )}
-                    </div>
-                    {job.estimatedDuration && (
-                      <div>
-                        <span className="text-muted-foreground">Duration:</span> {formatDurationTier(job.estimatedDuration)}
-                      </div>
-                    )}
-                  </div>
-
-                  {job.command && (
-                    <p className="text-sm">
-                      <span className="text-muted-foreground">Command:</span>{" "}
-                      <code className="bg-muted px-1 rounded text-xs truncate block max-w-[200px]">{job.command}</code>
-                    </p>
-                  )}
-
-                  {job.kaggleDatasetUrl && (
-                    <p className="text-sm">
-                      <span className="text-muted-foreground">Kaggle:</span>{" "}
-                      <a href={job.kaggleDatasetUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs truncate block">
-                        {job.kaggleDatasetUrl}
-                      </a>
-                    </p>
-                  )}
-
-                  <div className="text-xs text-muted-foreground">
-                    Created {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2">
-                    <div className="text-sm">
-                      {job.logsCount > 0 && (
-                        <span className="text-muted-foreground">{job.logsCount} log lines</span>
-                      )}
-                      {job.artifactsCount > 0 && (
-                        <span className="ml-3 text-muted-foreground">{job.artifactsCount} artifacts</span>
-                      )}
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button asChild variant="secondary" size="sm" className="w-full mt-4">
-                        <Link href={`/jobs/${job.id}`}>View Details</Link>
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            </div>
           </div>
-        )}
-        {jobs.length > 6 && (
-          <div className="mt-4 text-center">
-            <Button asChild variant="outline">
-              <Link href="/jobs">View All Jobs</Link>
-            </Button>
+
+          {/* ACTIVE JOBS LIST */}
+          <div className="col-span-1 bg-background lg:col-span-9 flex flex-col">
+            <div className="flex items-center justify-between border-b border-border p-4 bg-card">
+              <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                <Terminal className="h-4 w-4" /> Job Queue
+              </h2>
+              <Link href="/jobs" className="text-[10px] font-mono text-primary uppercase hover:underline">
+                View_All -&gt;
+              </Link>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm font-mono border-collapse">
+                <thead className="bg-card text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Job_ID</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Type</th>
+                    <th className="px-4 py-3 font-medium">Resources</th>
+                    <th className="px-4 py-3 font-medium">Age</th>
+                    <th className="px-4 py-3 text-right font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {jobs.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                        No jobs currently tracked.
+                      </td>
+                    </tr>
+                  ) : (
+                    jobs.slice(0, 8).map((job) => (
+                      <tr key={job.id} className="hover:bg-card transition-colors group">
+                        <td className="px-4 py-3 text-muted-foreground">
+                          <Link href={`/jobs/${job.id}`} className="hover:text-primary transition-colors">
+                            {job.id.substring(0, 8)}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={job.status} />
+                        </td>
+                        <td className="px-4 py-3 uppercase text-xs">
+                          {job.type.replace('_', ' ')}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
+                          <Cpu className="h-3 w-3" />
+                          <span>{job.cpuTier}/{formatMemoryTier(job.memoryTier)}</span>
+                          {job.gpuMemoryTier && (
+                            <span className="text-primary border border-primary/20 px-1 rounded-sm">
+                              GPU:{formatGpuMemory(job.gpuMemoryTier)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                          {formatDistanceToNow(new Date(job.createdAt))}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Link href={`/jobs/${job.id}`} className="text-[10px] uppercase tracking-wider text-muted-foreground group-hover:text-primary transition-colors">
+                            Inspect
+                          </Link>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        )}
+
+        </div>
       </div>
     </div>
   );

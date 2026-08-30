@@ -4,9 +4,12 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Monitor, Copy, Check, Power, Key } from "lucide-react";
+import { Loader2, Monitor, Copy, Check, Power, Key, Terminal } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Machine } from "@/types/api";
+import { TrustMeter } from "@/components/TrustMeter";
+
+import StatusBadge from "@/components/StatusBadge";
 
 interface MachineStatusBadgeProps {
   lastHeartbeatAt: string | null;
@@ -14,37 +17,17 @@ interface MachineStatusBadgeProps {
 }
 
 function MachineStatusBadge({ lastHeartbeatAt, status }: MachineStatusBadgeProps) {
-  if (status === "offline") {
-    return (
-      <Badge variant="destructive">
-        Offline
-      </Badge>
-    );
-  }
-
   const isRecent = lastHeartbeatAt && new Date(lastHeartbeatAt) > new Date(Date.now() - 3 * 60 * 1000);
   
-  if (!isRecent) {
-    return (
-      <Badge variant="destructive">
-        Offline
-      </Badge>
-    );
+  if (status === "offline" || (!isRecent && lastHeartbeatAt)) {
+    return <StatusBadge status="offline" />;
   }
 
   if (status === "running") {
-    return (
-      <Badge className="bg-green-500 hover:bg-green-600 text-white">
-        Running Job
-      </Badge>
-    );
+    return <StatusBadge status="running" />;
   }
 
-  return (
-    <Badge variant="secondary">
-      Idle
-    </Badge>
-  );
+  return <StatusBadge status="idle" />;
 }
 
 export default function MachinesPage() {
@@ -137,113 +120,136 @@ export default function MachinesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Machines</h1>
-        <p className="text-muted-foreground">Manage your compute resources and agent keys</p>
+      <div className="border-b border-border pb-4">
+        <h1 className="text-xl font-bold uppercase tracking-wider text-foreground">Infrastructure Nodes</h1>
+        <p className="text-[10px] font-mono text-muted-foreground uppercase mt-1">Manage compute resources and agent authentication keys</p>
       </div>
 
       {/* Agent Key Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Key className="mr-2 h-5 w-5 text-primary" />
-            Agent Registration Key
-          </CardTitle>
-          <CardDescription>
-            Use this key to register and start your local compute agent.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="border border-border bg-card flex flex-col">
+        <div className="p-4 border-b border-border bg-background flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground font-mono">
+            <Key className="h-3 w-3" /> Agent Registration Key
+          </h2>
+        </div>
+        <div className="p-6">
           {userKey ? (
-            <div className="p-4 bg-muted rounded-md space-y-3">
+            <div className="space-y-4 font-mono text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Your Personal Agent Key:</span>
-                <Button type="button" size="sm" variant="outline" onClick={handleCopyToken}>
-                  {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
-                  {copied ? "Copied!" : "Copy Key"}
-                </Button>
+                <span className="text-muted-foreground uppercase text-[10px]">Your Personal Agent Key:</span>
+                <button 
+                  type="button" 
+                  className="flex items-center gap-2 text-primary hover:bg-primary/10 px-3 py-1 border border-primary/50 transition-colors uppercase text-[10px]"
+                  onClick={handleCopyToken}
+                >
+                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  {copied ? "COPIED" : "COPY_KEY"}
+                </button>
               </div>
-              <code className="block text-xs break-all bg-background p-3 rounded border font-mono">
+              <div className="bg-background border border-border p-4 break-all text-muted-foreground">
                 {userKey}
-              </code>
-              <p className="text-xs text-muted-foreground">
-                Run: <code className="bg-background px-1 py-0.5 rounded border">computeshare-agent start --token {userKey}</code>
+              </div>
+              <p className="text-muted-foreground text-[10px] uppercase flex items-center gap-2">
+                <Terminal className="h-3 w-3" /> 
+                Launch Command: 
+                <span className="text-foreground">$ computeshare-agent start --token {userKey}</span>
               </p>
+              
+              <div className="pt-4 border-t border-border flex items-center gap-2 text-[10px] uppercase text-muted-foreground">
+                Need a new key? 
+                <button onClick={handleRegister} className="text-primary hover:underline uppercase">Regenerate</button> 
+                (Existing machines remain valid)
+              </div>
             </div>
           ) : (
-            <div className="text-center py-4">
-              <p className="text-sm text-muted-foreground mb-4">You haven't generated an agent key yet.</p>
-              <Button onClick={handleRegister} disabled={registering}>
-                {registering && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Register to get Agent Key
-              </Button>
+            <div className="text-center py-8">
+              <p className="text-[10px] font-mono uppercase text-muted-foreground mb-4">You haven't generated an agent key yet.</p>
+              <button 
+                onClick={handleRegister} 
+                disabled={registering}
+                className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 font-mono text-xs uppercase hover:opacity-90 transition-opacity"
+              >
+                {registering && <Loader2 className="h-3 w-3 animate-spin" />}
+                Generate_Key
+              </button>
             </div>
           )}
-          {error && <p className="text-sm text-destructive mt-2">{error}</p>}
-        </CardContent>
-        {userKey && (
-          <CardFooter className="border-t bg-muted/50 py-3">
-            <p className="text-xs text-muted-foreground">
-              Wait, need a new key? <button onClick={handleRegister} className="underline hover:text-primary">Click here to regenerate</button>. Note: Old key will still work for existing machines.
-            </p>
-          </CardFooter>
-        )}
-      </Card>
+          {error && <p className="text-[10px] font-mono text-destructive uppercase mt-4">ERR: {error}</p>}
+        </div>
+      </div>
 
       {/* Machines List */}
       <div>
-        <h2 className="text-2xl font-bold mb-4">Your Active Machines</h2>
+        <h2 className="text-[10px] uppercase tracking-widest text-muted-foreground font-mono mb-4">Registered Hardware Nodes</h2>
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin" />
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
         ) : machines.length === 0 ? (
-          <Card>
-            <CardContent className="pt-6 text-center text-muted-foreground">
-              No machines registered yet. Use your Agent Key to connect a machine.
-            </CardContent>
-          </Card>
+          <div className="border border-border bg-card p-12 text-center text-[10px] font-mono uppercase text-muted-foreground">
+            No active nodes. Deploy the agent to connect hardware.
+          </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {machines.map((machine) => (
-              <Card key={machine.id}>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base flex items-center">
-                      <Monitor className="mr-2 h-4 w-4" />
-                      {machine.id}
-                    </CardTitle>
-                    <MachineStatusBadge lastHeartbeatAt={machine.lastHeartbeatAt} status={machine.status} />
+              <div key={machine.id} className="flex flex-col border border-border bg-card hover:border-primary/50 transition-colors">
+                <div className="p-4 border-b border-border flex items-center justify-between bg-background">
+                  <div className="flex items-center gap-2 text-xs font-mono uppercase text-foreground">
+                    <Monitor className="h-4 w-4" />
+                    NODE_{machine.id.substring(0,6)}
                   </div>
-                  <CardDescription>
-                    CPU: {machine.cpuTotal} • RAM: {Math.round(machine.memoryTotal / 1024)}GB • GPU: {machine.gpuTotal}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {machine.gpuTotal > 0 && machine.gpuVendor && (
-                    <div className="text-sm">
-                      <span className="font-medium">GPU:</span> {machine.gpuVendor} ({Math.round((machine.gpuMemoryTotal || 0) / 1024)}GB)
+                  <MachineStatusBadge lastHeartbeatAt={machine.lastHeartbeatAt} status={machine.status} />
+                </div>
+                
+                <div className="p-4 space-y-4 font-mono text-xs">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-[10px] uppercase text-muted-foreground mb-1">Compute</div>
+                      <div className="text-foreground">
+                        {machine.cpuTotal} CORE<br/>
+                        {Math.round(machine.memoryTotal / 1024)} GB RAM
+                      </div>
                     </div>
-                  )}
-                  {machine.lastHeartbeatAt && (
-                    <div className="text-sm">
-                      <span className="font-medium">Last seen:</span>{" "}
-                      {formatDistanceToNow(new Date(machine.lastHeartbeatAt), { addSuffix: true })}
+                    {machine.gpuTotal > 0 && machine.gpuVendor && (
+                      <div>
+                        <div className="text-[10px] uppercase text-muted-foreground mb-1">Accelerator</div>
+                        <div className="text-foreground text-[10px]">
+                          {machine.gpuVendor.toUpperCase()}<br/>
+                          {Math.round((machine.gpuMemoryTotal || 0) / 1024)} GB VRAM
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="pt-3 border-t border-border">
+                    <TrustMeter score={machine.trustScore} className="mt-1" />
+                  </div>
+
+                  <div className="pt-3 border-t border-border flex flex-col gap-1 text-[10px] uppercase text-muted-foreground">
+                    <div className="flex justify-between">
+                      <span>Jobs (Success/Fail)</span>
+                      <span className="text-foreground">{machine.totalJobsCompleted} / {machine.totalJobsFailed}</span>
                     </div>
-                  )}
-                </CardContent>
-                <CardFooter className="flex justify-end">
-                  <Button
-                    variant="destructive"
-                    size="sm"
+                    <div className="flex justify-between">
+                      <span>Last Seen</span>
+                      <span className="text-foreground">
+                        {machine.lastHeartbeatAt ? formatDistanceToNow(new Date(machine.lastHeartbeatAt), { addSuffix: true }) : 'NEVER'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-auto border-t border-border">
+                  <button
                     onClick={() => handleReclaim(machine.id)}
                     disabled={reclaiming === machine.id}
+                    className="w-full py-2 flex justify-center items-center gap-2 text-[10px] uppercase font-mono tracking-wider text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
                   >
-                    {reclaiming === machine.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Reclaim
-                  </Button>
-                </CardFooter>
-              </Card>
+                    {reclaiming === machine.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                    [ Reclaim_Node ]
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         )}

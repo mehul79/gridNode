@@ -57,15 +57,16 @@ export default function Navbar() {
   const showApprovals = hasMachines;
 
   return (
-    <nav className="border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+    <nav className="border-b border-border bg-background">
+      <div className="container mx-auto px-4 h-12 flex items-center justify-between">
         {/* Logo/Brand */}
-        <Link href="/" className="font-bold text-xl">
-          GridNode
+        <Link href="/" className="font-bold text-lg flex items-center gap-2">
+          <div className="h-3 w-3 bg-primary animate-pulse" />
+          <span className="tracking-widest uppercase font-mono">GridNode</span>
         </Link>
 
         {/* Nav Links */}
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-1">
           {navLinks
             .filter((link) => link.href !== "/approvals" || showApprovals)
             .map((link) => {
@@ -75,13 +76,13 @@ export default function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center space-x-2 px-3 py-1.5 text-[10px] uppercase font-mono tracking-wider transition-colors border border-transparent ${
                     active
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                      ? "bg-card border-border text-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-card/50 hover:border-border/50"
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className="h-3 w-3" />
                   <span>{link.label}</span>
                 </Link>
               );
@@ -91,31 +92,31 @@ export default function Navbar() {
         {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-              <Avatar className="h-10 w-10">
-                <AvatarImage src={session.user.image || undefined} alt={session.user.name} />
-                <AvatarFallback>{session.user.name?.charAt(0)?.toUpperCase()}</AvatarFallback>
-              </Avatar>
-            </Button>
+            <button className="flex items-center gap-2 px-2 py-1 hover:bg-card border border-transparent hover:border-border transition-colors">
+              <span className="text-[10px] uppercase font-mono text-muted-foreground">{session.user.name}</span>
+              <div className="h-4 w-4 bg-muted border border-border flex items-center justify-center text-[8px] font-mono">
+                {session.user.name?.charAt(0)?.toUpperCase()}
+              </div>
+            </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="end" forceMount>
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{session.user.name}</p>
-                <p className="text-xs leading-none text-muted-foreground">{session.user.email}</p>
+          <DropdownMenuContent className="w-56 rounded-none border-border" align="end" forceMount>
+            <DropdownMenuLabel className="font-normal rounded-none">
+              <div className="flex flex-col space-y-1 font-mono">
+                <p className="text-xs font-medium leading-none">{session.user.name}</p>
+                <p className="text-[10px] leading-none text-muted-foreground">{session.user.email}</p>
                 {hasMachines && (
-                  <p className="text-xs leading-none text-muted-foreground">Machine Owner</p>
+                  <p className="text-[10px] leading-none text-primary mt-1">PROVIDER_ACTIVE</p>
                 )}
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/")}>
-              <User className="mr-2 h-4 w-4" />
+            <DropdownMenuSeparator className="bg-border" />
+            <DropdownMenuItem onClick={() => router.push("/")} className="rounded-none font-mono text-xs cursor-pointer focus:bg-card focus:text-foreground">
+              <User className="mr-2 h-3 w-3" />
               <span>Profile</span>
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
+            <DropdownMenuSeparator className="bg-border" />
+            <DropdownMenuItem onClick={handleLogout} className="rounded-none font-mono text-xs cursor-pointer focus:bg-destructive focus:text-destructive-foreground text-destructive">
+              <LogOut className="mr-2 h-3 w-3" />
               <span>Log out</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
