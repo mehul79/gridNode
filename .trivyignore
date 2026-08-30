@@ -1,0 +1,3 @@
+# Example ignoring an unfixed CVE until it is patched in Alpine
+# CVE-2024-XXXXX
+# Justification: Only affects CLI edge-cases not invoked in production. Expires 2026-10-01.

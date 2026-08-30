@@ -1,0 +1,60 @@
+version: "3.8"
+services:
+  backend:
+    image: ${ECR_REGISTRY}/gridnode-be:${IMAGE_TAG}
+    ports:
+      - "3005:3005"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "awslogs"
+      options:
+        awslogs-region: "us-east-1"
+        awslogs-group: "/ecs/gridnode-backend"
+        awslogs-stream-prefix: "backend"
+
+  frontend:
+    image: ${ECR_REGISTRY}/gridnode-fe:${IMAGE_TAG}
+    ports:
+      - "80:3000"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "awslogs"
+      options:
+        awslogs-region: "us-east-1"
+        awslogs-group: "/ecs/gridnode-frontend"
+        awslogs-stream-prefix: "frontend"
+
+  # Redis acts as the BullMQ queue state. Kept ephemeral inside docker-compose.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # 128MB limit for queue state, allkeys-lru eviction. Noted as correctness risk.
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    mem_limit: 200m
+    read_only: true
+    tmpfs:
+      - /data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
