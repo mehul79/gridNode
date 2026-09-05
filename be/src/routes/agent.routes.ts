@@ -1,22 +1,16 @@
 import { Router } from "express";
-import { GpuVendor, Prisma } from "@prisma/client";
+import { JobStatus, Prisma } from "@prisma/client";
 import { prisma } from "../lib/db";
-import { hashToken } from "../lib/token";
 import { requireAgentAuth } from "../middleware/requireAgentAuth";
 
 const router = Router();
 
-// Helper: parse GPU vendor from nvidia-smi output
-function parseGpuVendor(name: string): GpuVendor | null {
-  const lower = name.toLowerCase();
-  if (lower.includes("nvidia")) return "nvidia";
-  if (lower.includes("amd") || lower.includes("radeon")) return "amd";
-  if (lower.includes("intel")) return "intel";
-  return null
-}
-
-// GET /api/agent/jobs/next — agent polls for a job
-
+// GET /api/agent/jobs/next — agent polls for a job to run
+//
+// A job may only be claimed by a machine belonging to the user who approved it
+// (job.providerId). Without that check, a job whose machineId was cleared —
+// which happens when an agent defers it back to `queued` — could be picked up
+// and executed by a machine the requester's counterparty never approved.
 router.get("/jobs/next", requireAgentAuth, async (req, res) => {
   try {
     const agentSession = (req as any).agentSession;
@@ -25,47 +19,40 @@ router.get("/jobs/next", requireAgentAuth, async (req, res) => {
     if (machine.status === "reclaimed") {
       return res.status(204).end();
     }
-    
-    console.log(`[Polling] Agent requesting next job for machineId: ${agentSession.machineId}`);
 
-    // Query all potentially eligible jobs to help debug
-    const allApprovedJobs = await prisma.job.findMany({
-      where: { status: { in: ["approved", "queued"] as any } },
-      select: { id: true, status: true, machineId: true }
-    });
-    
-    if (allApprovedJobs.length > 0) {
-      console.log(`[Polling] Eligible jobs in DB:`, allApprovedJobs.map(j => `ID=${j.id} Status=${j.status} Machine=${j.machineId}`));
-    }
+    const claimable: Prisma.JobWhereInput = {
+      status: { in: [JobStatus.approved, JobStatus.queued] },
+      providerId: machine.ownerId,
+      OR: [{ machineId: null }, { machineId: agentSession.machineId }],
+    };
 
     const job = await prisma.job.findFirst({
-      where: {
-        status: { in: ["approved", "queued"] as any },
-        OR: [
-          { machineId: null },
-          { machineId: agentSession.machineId }
-        ]
-      },
+      where: claimable,
       orderBy: { createdAt: "asc" },
-      include: {
-        requester: { select: { name: true, email: true } }
-      }
+      select: { id: true },
     });
 
     if (!job) {
-      console.log(`[Polling] No matching job for machineId=${agentSession.machineId}. Total approved jobs elsewhere: ${allApprovedJobs.length}`);
       return res.status(204).end();
     }
 
-    console.log(`[Polling] Found matching job: ${job.id}. Assigning to machine...`);
-
-    const updatedJob = await prisma.job.update({
-      where: { id: job.id },
-      data: { status: "assigned", machineId: agentSession.machineId },
-      include: { requester: { select: { name: true, email: true } } } // keep relation
+    // Compare-and-set: another agent owned by the same user may be polling
+    // concurrently, so only the request that actually moves the row wins.
+    const claimed = await prisma.job.updateMany({
+      where: { AND: [{ id: job.id }, claimable] },
+      data: { status: JobStatus.assigned, machineId: agentSession.machineId },
     });
 
-    console.log(`[Polling] Job ${updatedJob.id} successfully assigned to machine ${agentSession.machineId}`);
+    if (claimed.count === 0) {
+      return res.status(204).end();
+    }
+
+    const updatedJob = await prisma.job.findUnique({
+      where: { id: job.id },
+      include: { requester: { select: { name: true, email: true } } },
+    });
+
+    console.log(`[Polling] Job ${job.id} assigned to machine ${agentSession.machineId}`);
 
     res.json({ job: updatedJob });
   } catch (err) {
@@ -87,9 +74,5 @@ router.get("/kaggle-credentials", requireAgentAuth, async (req, res) => {
     key: KAGGLE_API_TOKEN
   })
 })
-
-// PATCH /api/jobs/:id/status — agent reports job status change
-// We put this in jobs.routes.ts or agent.routes.ts? The agent.py uses /api/jobs/:id/status.
-// Let's add it to jobs.routes.ts to match the agent's expected path.
 
 export default router;

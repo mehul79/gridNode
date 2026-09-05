@@ -4,19 +4,18 @@ import { requireAuth } from "../middleware/requireAuth";
 import { requireAgentAuth } from "../middleware/requireAgentAuth";
 import { prisma } from "../lib/db";
 import { generateSessionToken, hashToken } from "../lib/token";
+import { parseGpuVendor } from "../lib/gpu";
 import { emitJobUpdate } from "../sockets";
 
 const router = Router();
 
-// GET /api/machines - list current user's machines, or all machines if ?all=true
+// GET /api/machines - list the current user's own machines
 router.get("/", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
-    const all = String(req.query.all) === "true";
-    const where: Prisma.MachineWhereInput = all ? {} : { ownerId: user.id };
 
     const machines = await prisma.machine.findMany({
-      where,
+      where: { ownerId: user.id },
       orderBy: { createdAt: "desc" },
     });
     res.json(machines);
@@ -34,7 +33,6 @@ router.post("/register", async (req, res) => {
       cpu_cores, 
       ram_gb, 
       gpu, 
-      disk_free_gb,
       userKey,
       hardware_id
     } = req.body;
@@ -56,13 +54,15 @@ router.post("/register", async (req, res) => {
     const memoryTotal = Math.ceil((ram_gb || 0) * 1024);
     
     let gpuTotal = 0;
-    let gpuVendor = null;
+    let gpuVendor: GpuVendor | null = null;
     let gpuMemoryTotal = 0;
 
     if (gpu && typeof gpu === "object") {
       gpuTotal = 1;
-      gpuVendor = (gpu.name.split(' ')[0].toLowerCase() as GpuVendor) || null;
-      gpuMemoryTotal = Math.ceil(gpu.vram_total_mb || 0);
+      // Product names ("NVIDIA GeForce RTX 4090") do not map onto the vendor
+      // enum by first word, so match on substrings and fall back to null.
+      gpuVendor = parseGpuVendor(gpu.name);
+      gpuMemoryTotal = Math.ceil(Number(gpu.vram_total_mb) || 0);
     }
 
     // Persistent Machine ID Logic:

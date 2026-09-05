@@ -4,13 +4,11 @@ import { requireAuth } from "../middleware/requireAuth";
 import { requireAgentAuth } from "../middleware/requireAgentAuth";
 import { prisma } from "../lib/db";
 import { appendJobEvent } from "../lib/jobEvents";
-import { canStop } from "../lib/jobStatus";
+import { canStop, canTransition, isTerminalStatus } from "../lib/jobStatus";
 import { canViewJob, canStopJob, resolveStopTargetStatus } from "../lib/jobAccess";
-import { emitLog, emitJobUpdate, emitMailUpdate } from "../sockets";
+import { emitLog, emitJobUpdate } from "../sockets";
 import { generateGetUrl, generatePutUrl } from "../lib/s3";
-import { sendJobResultEmail } from "../lib/email";
 import { emailQueue } from "../queues/email.queue";
-import { error } from "console";
 
 const router = Router();
 
@@ -110,8 +108,6 @@ router.post("/", requireAuth, async (req, res) => {
       gpuMemoryTier,
       gpuVendor,
       estimatedDuration,
-
-      machineId,
     } = req.body;
 
     // ✅ REQUIRED FIELDS
@@ -562,37 +558,65 @@ router.patch("/:id/status", requireAgentAuth, async (req, res) => {
       return res.status(400).json({ error: "Invalid status" });
     }
 
-    const updated = await prisma.job.update({
-      where: { id: jobId },
+    // Idempotent re-send of the status the job already has. This is the normal
+    // case when an owner reclaims a machine: the job is already `preempted` by
+    // the time the agent notices and reports it. Returning before any write is
+    // also what stops a repeated `completed` from collecting the trust bonus
+    // more than once.
+    if (job.status === status) {
+      return res.json(job);
+    }
+
+    // Otherwise a terminal job is final.
+    if (isTerminalStatus(job.status)) {
+      return res.status(409).json({ error: `Job is already ${job.status}` });
+    }
+
+    if (!canTransition(job.status, status)) {
+      return res.status(409).json({
+        error: `Illegal transition ${job.status} -> ${status}`,
+      });
+    }
+
+    // Compare-and-set on the status we validated against, so a concurrent
+    // stop/reclaim can't be overwritten by an in-flight agent report.
+    const claimed = await prisma.job.updateMany({
+      where: { id: jobId, status: job.status },
       data: {
         status,
-        ...(status === JobStatus.queued ? { machineId: null } : {})
+        ...(status === JobStatus.queued ? { machineId: null } : {}),
       },
     });
 
+    if (claimed.count === 0) {
+      return res.status(409).json({ error: "Job status changed concurrently" });
+    }
+
+    const updated = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
+
+    // Trust is only adjusted on a transition that actually happened, and only
+    // for a job this machine genuinely ran (completed is reachable only from
+    // running, which requires a real claim via /api/agent/jobs/next).
     if ((status === JobStatus.completed || status === JobStatus.failed) && updated.machineId) {
-      const machine = await prisma.machine.findUnique({
-        where: { id: updated.machineId },
-        select: { id: true, trustScore: true }
-      });
-      
-      if (machine) {
-        if (status === JobStatus.completed) {
+      if (status === JobStatus.completed) {
+        const machine = await prisma.machine.findUnique({
+          where: { id: updated.machineId },
+          select: { id: true, trustScore: true },
+        });
+        if (machine) {
           await prisma.machine.update({
             where: { id: machine.id },
             data: {
               trustScore: Math.min(100, machine.trustScore + 2.0),
-              totalJobsCompleted: { increment: 1 }
-            }
-          });
-        } else if (status === JobStatus.failed) {
-          await prisma.machine.update({
-            where: { id: machine.id },
-            data: {
-              totalJobsFailed: { increment: 1 }
-            }
+              totalJobsCompleted: { increment: 1 },
+            },
           });
         }
+      } else {
+        await prisma.machine.update({
+          where: { id: updated.machineId },
+          data: { totalJobsFailed: { increment: 1 } },
+        });
       }
 
       // enqueue the email job asynchronously
@@ -604,8 +628,7 @@ router.patch("/:id/status", requireAgentAuth, async (req, res) => {
         console.log("[JOB] The email was appended to the queue");
       }).catch((err) => {
         console.error("[JOB] Email wasn't queued", err);
-      })
-      ;
+      });
     }
 
     await appendJobEvent(

@@ -11,7 +11,11 @@ if (!redisUrl) {
 // ioredis requires maxRetriesPerRequest to be null for BullMQ
 export const connection = new Redis(redisUrl || "redis://localhost:6379", {
   maxRetriesPerRequest: null,
-  tls: redisUrl?.startsWith("rediss://") ? { rejectUnauthorized: false } : undefined
+  // Verify the server certificate by default. REDIS_TLS_INSECURE=true is an
+  // explicit, opt-in escape hatch for self-signed certs in local testing.
+  tls: redisUrl?.startsWith("rediss://")
+    ? { rejectUnauthorized: process.env.REDIS_TLS_INSECURE !== "true" }
+    : undefined
 });
 
 connection.on("message", (msg) =>{

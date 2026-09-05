@@ -5,3 +5,4 @@ workspaces
 /src/generated/prisma
 dist
 scripts
+cookies.txt

@@ -18,7 +18,9 @@ const transitions: Partial<Record<JobStatus, JobStatus[]>> = {
   [JobStatus.pending_approval]: [JobStatus.approved, JobStatus.rejected],
   [JobStatus.approved]: [JobStatus.queued],
   [JobStatus.queued]: [JobStatus.assigned],
-  [JobStatus.assigned]: [JobStatus.running, JobStatus.failed],
+  // assigned -> queued is the agent's "defer": it accepted the job, found it
+  // could not be allocated locally, and handed it back to the queue.
+  [JobStatus.assigned]: [JobStatus.running, JobStatus.failed, JobStatus.queued],
   [JobStatus.running]: [
     JobStatus.completed,
     JobStatus.failed,

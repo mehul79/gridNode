@@ -4,9 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test --require ts-node/register \"tests/**/*.test.ts\"",
     "dev": "nodemon --exec ts-node src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "lint": "eslint ."
   },
   "keywords": [],
   "author": "",
@@ -29,10 +30,14 @@
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.69.0"
   }
 }

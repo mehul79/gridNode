@@ -9,6 +9,7 @@ import { initSocket } from "./sockets";
 import { startSweeper, stopSweeper } from "./lib/sweeper";
 import { emailWorker } from "./queues/email.worker";
 import { connection as redisConnection } from "./queues/connection";
+import { allowedOrigins } from "./lib/config";
 import promClient from "prom-client";
 
 let sweeperInterval: NodeJS.Timeout | null = null;
@@ -51,9 +52,9 @@ app.get("/metrics", async (req, res) => {
 // CORS
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:8000"],
+    origin: allowedOrigins(),
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
   })
 );
 
