@@ -98,36 +98,47 @@ jobs:
       - name: Post-deploy Health Check
         run: |
           # Poll the orchestrator to ensure it comes up successfully.
-          # Since it's in a public subnet, we can hit it directly, or we can use SSM to curl localhost.
-          # We'll use SSM to curl localhost, which respects the Zero-Inbound posture (if we remove port 80/443 public ingress later).
+          # We use SSM to curl from inside the instance, which respects the
+          # Zero-Inbound posture (if we remove port 80/443 public ingress later).
+          #
+          # Ports must match docker-compose.yml: the backend publishes 3005 and
+          # serves /health; the frontend publishes host port 80 and serves
+          # /api/health. Checking both means a half-up stack fails the gate.
           INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=gridnode-orchestrator" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text)
-          
+
+          if [ "$INSTANCE_ID" == "None" ] || [ -z "$INSTANCE_ID" ]; then
+            echo "Error: Could not find a running gridnode-orchestrator instance."
+            exit 1
+          fi
+
           echo "Waiting for application to become healthy..."
-          
+
           # Poll for up to 3 minutes
           MAX_RETRIES=18
           RETRY_COUNT=0
-          
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+
+          while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
             # Using SSM to execute the curl inside the EC2 instance securely
             COMMAND_ID=$(aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
-              --parameters "commands=[\"curl -sf http://localhost:3000/api/health || exit 1\"]" \
+              --parameters "commands=[\"curl -sf http://localhost:3005/health && curl -sf http://localhost:80/api/health\"]" \
               --query "Command.CommandId" --output text)
-            
+
             sleep 5
             STATUS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query "Status" --output text)
-            
+
             if [ "$STATUS" == "Success" ]; then
               echo "Health check passed!"
               exit 0
             fi
-            
+
             echo "Health check $STATUS... retrying in 10s"
             sleep 10
-            ((RETRY_COUNT++))
+            # Note: (( )) returns non-zero when the result is 0, which aborts the
+            # step under `bash -e`. Use arithmetic assignment instead.
+            RETRY_COUNT=$((RETRY_COUNT + 1))
           done
-          
+
           echo "Health check failed after 3 minutes."
           exit 1

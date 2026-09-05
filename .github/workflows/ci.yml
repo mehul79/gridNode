@@ -17,7 +17,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6 # v4.0.4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'npm'
           
       - name: Install Frontend Dependencies
@@ -27,7 +27,11 @@ jobs:
       - name: Install Backend Dependencies
         working-directory: ./be
         run: npm ci
-        
+
+      - name: Generate Prisma Client
+        working-directory: ./be
+        run: npx prisma generate
+
       - name: Lint Frontend
         working-directory: ./fe
         run: npm run lint
@@ -52,13 +56,33 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6 # v4.0.4
         with:
-          node-version: '18'
+          node-version: '22'
       - name: Install Backend Dependencies
         working-directory: ./be
         run: npm ci
+      - name: Generate Prisma Client
+        working-directory: ./be
+        run: npx prisma generate
       - name: Run Backend Tests
         working-directory: ./be
         run: npm test
+
+  agent-test:
+    name: Agent Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent/computeshare_agent
+    steps:
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      # Uses the runner's preinstalled Python rather than adding another action
+      # to SHA-pin. The agent only requires >=3.9.
+      - name: Show Python version
+        run: python3 --version
+      - name: Install Agent Dependencies
+        run: python3 -m pip install --quiet -r requirements-dev.txt
+      - name: Run Agent Tests
+        run: python3 -m pytest -q
 
   docker-build:
     name: Docker Build Check
