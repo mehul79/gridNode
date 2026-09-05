@@ -163,7 +163,7 @@ export default function MachinesPage() {
             </div>
           ) : (
             <div className="text-center py-8">
-              <p className="text-[10px] font-mono uppercase text-muted-foreground mb-4">You haven't generated an agent key yet.</p>
+              <p className="text-[10px] font-mono uppercase text-muted-foreground mb-4">You haven&apos;t generated an agent key yet.</p>
               <button 
                 onClick={handleRegister} 
                 disabled={registering}

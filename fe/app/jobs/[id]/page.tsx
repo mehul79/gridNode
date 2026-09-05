@@ -326,7 +326,7 @@ export default function JobDetailPage() {
             <StatusBadge status={job.status} />
           </div>
           <div className="text-[10px] font-mono text-muted-foreground uppercase">
-            {job.type.replace('_', ' ')} // {job.id}
+            {job.type.replace('_', ' ')} {"//"} {job.id}
           </div>
         </div>
         {canStop && (

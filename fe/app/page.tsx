@@ -2,7 +2,7 @@
 
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, Plus, Terminal, Activity, ArrowRight, Server, Cpu } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
@@ -29,13 +29,7 @@ export default function Dashboard() {
     }
   }, [session, isPending, router]);
 
-  useEffect(() => {
-    if (session) {
-      fetchJobs();
-    }
-  }, [session]);
-
-  async function fetchJobs() {
+  const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005"}/api/jobs`, { credentials: "include" });
       if (res.ok) {
@@ -45,7 +39,13 @@ export default function Dashboard() {
     } catch (e) {
       console.error("Failed to fetch jobs", e);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (session) {
+      fetchJobs();
+    }
+  }, [session, fetchJobs]);
 
   const activeJobs = jobs.filter(j => !['completed', 'failed', 'cancelled', 'rejected'].includes(j.status));
   const completedJobs = jobs.filter(j => j.status === 'completed');

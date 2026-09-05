@@ -5,6 +5,17 @@ services:
     ports:
       - "3005:3005"
     restart: unless-stopped
+    # Runtime configuration lives in /opt/gridnode/.env on the host (see
+    # be/.env.example for the full list). Without it the backend has no
+    # DATABASE_URL and exits on boot.
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      # Redis is the compose service below, not the host.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      - redis
     read_only: true
     tmpfs:
       - /tmp
