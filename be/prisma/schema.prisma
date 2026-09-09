@@ -115,6 +115,14 @@ enum GpuVendor {
   intel
 }
 
+/// How the agent sandboxes job containers on this machine. gVisor intercepts
+/// syscalls in userspace; runc shares the host kernel. Reported by the agent on
+/// registration and on every heartbeat.
+enum IsolationMode {
+  gvisor
+  runc
+}
+
 model Machine {
   id               String    @id @default(cuid())
   ownerId          String
@@ -126,6 +134,7 @@ model Machine {
   gpuMemoryTotal   Int?      // Total GPU memory across all GPUs in MB
   gpuVendor        GpuVendor? // Primary GPU vendor (assumes homogeneous GPUs)
   status           String    @default("idle")
+  isolationMode    IsolationMode?  // null until the agent has reported one
   lastHeartbeatAt  DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt

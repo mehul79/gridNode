@@ -5,6 +5,7 @@ import { requireAgentAuth } from "../middleware/requireAgentAuth";
 import { prisma } from "../lib/db";
 import { generateSessionToken, hashToken } from "../lib/token";
 import { parseGpuVendor } from "../lib/gpu";
+import { parseIsolationMode } from "../lib/isolation";
 import { emitJobUpdate } from "../sockets";
 
 const router = Router();
@@ -34,7 +35,8 @@ router.post("/register", async (req, res) => {
       ram_gb, 
       gpu, 
       userKey,
-      hardware_id
+      hardware_id,
+      isolation_mode
     } = req.body;
 
     if (!agent_token) {
@@ -77,6 +79,7 @@ router.post("/register", async (req, res) => {
       gpuTotal,
       gpuVendor,
       gpuMemoryTotal: gpuMemoryTotal || null,
+      isolationMode: parseIsolationMode(isolation_mode),
       status: "idle", // Reset to idle upon registration/startup
       lastHeartbeatAt: new Date()
     };
@@ -127,7 +130,10 @@ router.post("/:id/heartbeat", requireAgentAuth, async (req, res) => {
   try {
     const id = String(req.params.id);
     const agentSession = (req as any).agentSession;
-    const { status } = req.body as { status?: string };
+    const { status, isolation_mode } = req.body as {
+      status?: string;
+      isolation_mode?: string;
+    };
 
     if (id !== agentSession.machineId) {
       return res.status(403).json({ error: "Machine id does not match session" });
@@ -146,6 +152,13 @@ router.post("/:id/heartbeat", requireAgentAuth, async (req, res) => {
       lastHeartbeatAt: now,
       status: (status === "running" || status === "idle") ? status : "idle"
     };
+
+    // Reported on every heartbeat so installing gVisor later is reflected
+    // without the owner having to re-register the machine.
+    const reportedIsolation = parseIsolationMode(isolation_mode);
+    if (reportedIsolation) {
+      updateData.isolationMode = reportedIsolation;
+    }
 
     const txs: any[] = [
       prisma.agentSession.update({

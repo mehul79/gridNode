@@ -23,14 +23,16 @@ status_updates = []
 # Pre-load a test job that the agent will pick up
 TEST_JOB = {
     "id": "test_job_001",
-    "type": "ml_notebook",
-    "repoUrl": "https://github.com/fastai/fastbook",
-    "command": "01_intro.ipynb",
+    "type": "video_render",
+    # Small, stable public repo — the fixture is about the agent's execution
+    # path, not about the repo's contents.
+    "repoUrl": "https://github.com/octocat/Hello-World",
+    "command": "echo 'integration job ran' | tee /workspace/outputs/result.txt",
     "kaggleDatasetUrl": None,
-    "cpuTier": "medium",
+    "cpuTier": "light",
     "memoryTier": "gb8",
     "gpuMemoryTier": None,
-    "estimatedDuration": "h1_6",
+    "estimatedDuration": "lt1h",
 }
 
 job_served = False   # only serve the job once
@@ -46,7 +48,15 @@ def register():
     print(f"       CPU: {data.get('cpu_cores')} cores")
     print(f"       RAM: {data.get('ram_gb')} GB")
     print(f"       GPU: {data.get('gpu')}")
-    return jsonify({"machine_id": machine_id, "status": "registered"})
+    print(f"       Hardware ID: {data.get('hardware_id')}")
+    print(f"       Isolation: {data.get('isolation_mode')}")
+    # Mirror the real backend's response shape: it hands back the session token
+    # the agent authenticates every subsequent call with.
+    return jsonify({
+        "machine_id": machine_id,
+        "agent_token": f"mock_token_{machine_id}",
+        "status": "registered",
+    })
 
 
 @app.route("/api/machines/<machine_id>/heartbeat", methods=["POST"])

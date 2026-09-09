@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest>=8.0.0
+# tests/mock_backend.py stands in for the Express backend so the full agent
+# flow can be exercised without a database.
+flask>=3.0.0

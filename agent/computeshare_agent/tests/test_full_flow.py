@@ -9,7 +9,12 @@ Then in another terminal:
 
 import sys
 import time
+import pytest
 import requests
+
+# End-to-end test: needs `python tests/mock_backend.py` running alongside it, so
+# it is excluded from the default unit run (see pytest.ini).
+pytestmark = pytest.mark.integration
 
 BACKEND = "http://localhost:8000"
 

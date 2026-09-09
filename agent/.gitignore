@@ -1,4 +1,5 @@
 build
+dist/
 computeshare_agent.egg-info
 # Environments
 .env

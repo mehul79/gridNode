@@ -19,6 +19,8 @@ export interface User {
   updatedAt: string;
 }
 
+export type IsolationMode = "gvisor" | "runc";
+
 export interface Machine {
   id: string;
   ownerId: string;
@@ -29,6 +31,7 @@ export interface Machine {
   gpuMemoryTotal: number | null;
   gpuVendor: GpuVendor | null;
   status: string;
+  isolationMode: IsolationMode | null;
   lastHeartbeatAt: string | null;
   createdAt: string;
   updatedAt: string;

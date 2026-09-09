@@ -13,9 +13,13 @@ import mimetypes
 import requests
 from tqdm import tqdm
 
+from computeshare_agent import config
 
-WORKSPACE_ROOT   = os.environ.get("COMPUTESHARE_WORKSPACE_ROOT",
-                                   os.path.expanduser("~/.computeshare/workspaces"))
+
+# Resolved through config so the agent has exactly one state root; still
+# overridable with COMPUTESHARE_WORKSPACE_ROOT. Called rather than captured at
+# import time so the environment can change between calls (and in tests).
+workspace_root = config.workspace_root
 DOWNLOAD_TIMEOUT = 120           # seconds for initial connection
 STREAM_TIMEOUT   = (10, 60)      # (connect, read) timeouts for streaming
 CHUNK_SIZE       = 8 * 1024 * 1024  # 8 MB chunks
@@ -23,8 +27,9 @@ MAX_DATASET_SIZE_GB = 20
 
 
 def create(job_id):
-    os.makedirs(WORKSPACE_ROOT, exist_ok=True)
-    base = os.path.join(WORKSPACE_ROOT, f"job_{job_id}")
+    root = workspace_root()
+    os.makedirs(root, exist_ok=True)
+    base = os.path.join(root, f"job_{job_id}")
     for sub in ["repo", "repo_writable", "data", "data/input", "outputs", "logs"]:
         os.makedirs(os.path.join(base, sub), exist_ok=True)
     print(f"  Workspace: {base}")
@@ -39,9 +44,10 @@ def cleanup(workspace):
 
 def cleanup_leftover_workspaces():
     try:
-        if os.path.exists(WORKSPACE_ROOT):
-            for item in os.listdir(WORKSPACE_ROOT):
-                path = os.path.join(WORKSPACE_ROOT, item)
+        root = workspace_root()
+        if os.path.exists(root):
+            for item in os.listdir(root):
+                path = os.path.join(root, item)
                 if os.path.isdir(path) and item.startswith("job_"):
                     shutil.rmtree(path)
     except Exception as e:
@@ -88,6 +94,17 @@ def extract_kaggle_slug(url):
     return match.group(1)
 
 
+def kaggle_config_dir():
+    return os.path.join(config.state_root(), ".kaggle")
+
+
+def kaggle_env():
+    """Environment for the kaggle CLI, pointing it at our credentials dir."""
+    env = os.environ.copy()
+    env["KAGGLE_CONFIG_DIR"] = kaggle_config_dir()
+    return env
+
+
 def setup_kaggle_credentials(backend_url, agent_headers):
     resp = requests.get(
         f"{backend_url}/api/agent/kaggle-credentials",
@@ -104,9 +121,13 @@ def setup_kaggle_credentials(backend_url, agent_headers):
     resp.raise_for_status()
     creds = resp.json()
 
-    kaggle_dir  = os.path.expanduser("~/.kaggle")
+    # Under the systemd service the agent runs as a --no-create-home user with
+    # ProtectHome=true, so ~/.kaggle is neither writable nor reachable. Keep the
+    # credentials in the agent's own state root and point the CLI at it with
+    # KAGGLE_CONFIG_DIR (see kaggle_env below).
+    kaggle_dir  = kaggle_config_dir()
     creds_path  = os.path.join(kaggle_dir, "kaggle.json")
-    os.makedirs(kaggle_dir, exist_ok=True)
+    os.makedirs(kaggle_dir, mode=0o700, exist_ok=True)
 
     with open(creds_path, "w") as f:
         json.dump({
@@ -169,7 +190,8 @@ def download_kaggle_dataset(url, workspace, backend_url, agent_headers):
             ],
             capture_output=True,
             text=True,
-            timeout=600                      # 10 minutes for large datasets
+            timeout=600,                     # 10 minutes for large datasets
+            env=kaggle_env(),
         )
 
         if result.returncode != 0:

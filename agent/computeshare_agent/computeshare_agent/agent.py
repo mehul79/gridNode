@@ -20,6 +20,7 @@ BACKEND_URL = None
 AUTH_HEADERS = {}
 MACHINE_ID  = None
 GPU_ENABLED = False
+GVISOR_AVAILABLE = False
 
 CPU_TIER_CORES = {
     "light":  2,
@@ -62,6 +63,8 @@ def normalise_job(raw_job: dict) -> dict:
         # repo and execution
         "github_repo":  raw_job["repoUrl"],
         "notebook_path": raw_job.get("command", ""), # command holds the notebook path
+        # video_render executes the command verbatim, so keep it unmapped too
+        "command":      raw_job.get("command", ""),
 
         # dataset
         "dataset_url":  raw_job.get("kaggleDatasetUrl"),
@@ -143,7 +146,12 @@ def register(token):
         "ram_gb":      res["ram"]["total_gb"],
         "gpu":         res["gpu"],
         "disk_free_gb": res["disk"]["free_gb"],
-        "userKey":      token
+        "userKey":      token,
+        # The backend looks machines up by (ownerId, hardwareId). Omitting this
+        # made Prisma drop the condition, so a second machine would overwrite
+        # the owner's first one instead of creating its own row.
+        "hardware_id":  res["hardware_id"],
+        "isolation_mode": "gvisor" if GVISOR_AVAILABLE else "runc",
     }
 
     print(payload)
@@ -175,6 +183,7 @@ def heartbeat_loop():
                 "cpu_used_pct": 100 - (res["cpu"]["free_cores"] / res["cpu"]["total_cores"] * 100),
                 "ram_used_gb":  res["ram"]["total_gb"] - res["ram"]["available_gb"],
                 "status":       "running" if _current_container else "idle",
+                "isolation_mode": "gvisor" if GVISOR_AVAILABLE else "runc",
             }
             resp = requests.post(
                 f"{BACKEND_URL}/api/machines/{MACHINE_ID}/heartbeat",
@@ -315,46 +324,52 @@ def execute_job(job):
         data_file_container = "/workspace/data/" + os.path.basename(data_file)
         # print(f"  [DEBUG] container path will be: {data_file_container!r}")
 
-        notebook_host_path, resolved_notebook_relpath = workspace.resolve_repo_file(
-            ws,
-            job["notebook_path"],
-            allowed_extensions=(".ipynb",),
-        )
-        job["notebook_path"] = resolved_notebook_relpath
-        # print(f"  [DEBUG] resolved notebook host path: {notebook_host_path!r}")
-        # print(f"  [DEBUG] resolved notebook relative path: {resolved_notebook_relpath!r}")
-        # print(f"  [DEBUG] notebook exists: {os.path.exists(notebook_host_path)}")
+        # Notebook parameterisation is specific to ml_notebook: for other job
+        # types "notebook_path" is a shell command or a script path, and
+        # resolving it as a .ipynb in the repo raises FileNotFoundError.
+        if job["type"] == "ml_notebook":
+            notebook_host_path, resolved_notebook_relpath = workspace.resolve_repo_file(
+                ws,
+                job["notebook_path"],
+                allowed_extensions=(".ipynb",),
+            )
+            job["notebook_path"] = resolved_notebook_relpath
+            # print(f"  [DEBUG] resolved notebook host path: {notebook_host_path!r}")
+            # print(f"  [DEBUG] resolved notebook relative path: {resolved_notebook_relpath!r}")
+            # print(f"  [DEBUG] notebook exists: {os.path.exists(notebook_host_path)}")
 
-        # read the notebook and check for parameters tag before injection
-        with open(notebook_host_path) as _f:
-            _nb = _json.load(_f)
-        _tagged = [
-            c for c in _nb.get("cells", [])
-            if "parameters" in c.get("metadata", {}).get("tags", [])
-        ]
-        # print(f"  [DEBUG] cells with 'parameters' tag before injection: {len(_tagged)}")
+            # read the notebook and check for parameters tag before injection
+            with open(notebook_host_path) as _f:
+                _nb = _json.load(_f)
+            _tagged = [
+                c for c in _nb.get("cells", [])
+                if "parameters" in c.get("metadata", {}).get("tags", [])
+            ]
+            # print(f"  [DEBUG] cells with 'parameters' tag before injection: {len(_tagged)}")
 
-        docker_runner.inject_parameters_cell(notebook_host_path, {
-            "DATA_DIR":   data_file_container,
-            "DATA_PATH":  data_file_container,
-            "OUTPUT_DIR": "/workspace/outputs",
-        })
+            docker_runner.inject_parameters_cell(notebook_host_path, {
+                "DATA_DIR":   data_file_container,
+                "DATA_PATH":  data_file_container,
+                "OUTPUT_DIR": "/workspace/outputs",
+            })
 
-        # verify injection worked
-        with open(notebook_host_path) as _f:
-            _nb2 = _json.load(_f)
-        _tagged2 = [
-            c for c in _nb2.get("cells", [])
-            if "parameters" in c.get("metadata", {}).get("tags", [])
-        ]
-        print(f"  [DEBUG] cells with 'parameters' tag after injection: {len(_tagged2)}")
-        if _tagged2:
-            print(f"  [DEBUG] injected cell source: {_tagged2[0]['source']!r}")
+            # verify injection worked
+            with open(notebook_host_path) as _f:
+                _nb2 = _json.load(_f)
+            _tagged2 = [
+                c for c in _nb2.get("cells", [])
+                if "parameters" in c.get("metadata", {}).get("tags", [])
+            ]
+            print(f"  [DEBUG] cells with 'parameters' tag after injection: {len(_tagged2)}")
+            if _tagged2:
+                print(f"  [DEBUG] injected cell source: {_tagged2[0]['source']!r}")
 
         _reclaim_flag.clear()
         
         print(f"  [execute_job] Starting Docker container")
-        process, container_name, dep_volume = docker_runner.run(job, ws, allocation)
+        process, container_name, dep_volume = docker_runner.run(
+            job, ws, allocation, GVISOR_AVAILABLE
+        )
         _current_dep_volume = dep_volume
         print(f"  [execute_job] Container started: {container_name}")
 
@@ -451,8 +466,22 @@ def run_agent():
     # prerequisites
     checks = run_all_checks()
 
-    global GPU_ENABLED
+    global GPU_ENABLED, GVISOR_AVAILABLE
     GPU_ENABLED = checks["gpu_available"]
+    GVISOR_AVAILABLE = checks["gvisor_available"]
+
+    if not GVISOR_AVAILABLE:
+        if config.require_gvisor():
+            print("\n  [ERROR] COMPUTESHARE_REQUIRE_GVISOR=true but gVisor is not available.")
+            print("  Fix: run `runsc install` and restart Docker, or unset the variable.")
+            sys.exit(1)
+        print("\n" + "*" * 68)
+        print("  WARNING: gVisor (runsc) is not registered with Docker.")
+        print("  Jobs from other users will run under runc, which shares this")
+        print("  machine's kernel — a container escape would reach the host.")
+        print("  Fix: run `runsc install` and restart Docker.")
+        print("  To refuse jobs instead, set COMPUTESHARE_REQUIRE_GVISOR=true.")
+        print("*" * 68 + "\n")
 
     # load or register
     cfg = config.load()
@@ -461,7 +490,9 @@ def run_agent():
         sys.exit(1)
 
     global BACKEND_URL, AUTH_HEADERS, MACHINE_ID
-    BACKEND_URL  = cfg["backend_url"]
+    # An explicit COMPUTESHARE_BACKEND_URL (or --backend) wins over the value
+    # captured at registration, so moving the backend does not require a reset.
+    BACKEND_URL  = os.environ.get("COMPUTESHARE_BACKEND_URL") or BACKEND_URL or cfg["backend_url"]
     MACHINE_ID   = cfg["machine_id"]
     AUTH_HEADERS = {"Authorization": f"Bearer {cfg['agent_token']}"}
 
@@ -493,8 +524,16 @@ def main():
     sub = parser.add_subparsers(dest="command")
 
     start_cmd = sub.add_parser("start", help="Start the agent")
-    start_cmd.add_argument("--token",   help="Owner token from dashboard (first run only)")
-    start_cmd.add_argument("--backend", default="http://localhost:8000")
+    start_cmd.add_argument(
+        "--token",
+        help="Owner token from the dashboard (first run only). "
+             "Defaults to $COMPUTESHARE_TOKEN.",
+    )
+    start_cmd.add_argument(
+        "--backend",
+        help=f"Backend base URL. Defaults to $COMPUTESHARE_BACKEND_URL, "
+             f"else {config.DEFAULT_BACKEND_URL}.",
+    )
 
     sub.add_parser("reset", help="Clear saved config and re-register")
 
@@ -505,17 +544,16 @@ def main():
         print("Config cleared. Run `start --token <token>` to re-register.")
         return
 
-    # default to start
-    global BACKEND_URL, AUTH_HEADERS, MACHINE_ID
-    backend = getattr(args, "backend", "http://localhost:8000")
-    token   = getattr(args, "token", None)
-
-    BACKEND_URL = backend
+    # `start` is the default so a bare ExecStart= works under systemd.
+    global BACKEND_URL, AUTH_HEADERS, MACHINE_ID, GPU_ENABLED, GVISOR_AVAILABLE
+    BACKEND_URL = getattr(args, "backend", None) or config.backend_url()
+    token       = getattr(args, "token", None) or config.token()
 
     if token:
         # first run — register then start
         checks = run_all_checks()
         GPU_ENABLED = checks["gpu_available"]
+        GVISOR_AVAILABLE = checks["gvisor_available"]
         AUTH_HEADERS = {"Authorization": f"Bearer {token}"}
         cfg = register(token)
         MACHINE_ID = cfg["machine_id"]

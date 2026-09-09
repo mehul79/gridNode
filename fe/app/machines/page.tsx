@@ -10,6 +10,7 @@ import type { Machine } from "@/types/api";
 import { TrustMeter } from "@/components/TrustMeter";
 
 import StatusBadge from "@/components/StatusBadge";
+import IsolationBadge from "@/components/IsolationBadge";
 
 interface MachineStatusBadgeProps {
   lastHeartbeatAt: string | null;
@@ -198,7 +199,10 @@ export default function MachinesPage() {
                     <Monitor className="h-4 w-4" />
                     NODE_{machine.id.substring(0,6)}
                   </div>
-                  <MachineStatusBadge lastHeartbeatAt={machine.lastHeartbeatAt} status={machine.status} />
+                  <div className="flex items-center gap-3">
+                    <IsolationBadge mode={machine.isolationMode} />
+                    <MachineStatusBadge lastHeartbeatAt={machine.lastHeartbeatAt} status={machine.status} />
+                  </div>
                 </div>
                 
                 <div className="p-4 space-y-4 font-mono text-xs">

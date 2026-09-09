@@ -69,7 +69,10 @@ def resolve_allocation(job, resources):
     ram_alloc = max(min(ram_request_gb, resources["ram"]["usable_gb"]), MIN_VIABLE_RAM_GB)
 
     gpu_alloc = None
-    gpu_required = job.get("gpu_required") is not None
+    # `gpu_required` is a bool on the normalised manifest, so `is not None` was
+    # true even for CPU jobs: they were handed a GPU, and because GPU jobs skip
+    # gVisor, every job on a GPU machine silently ran under runc.
+    gpu_required = bool(job.get("gpu_required"))
 
     if gpu_required and resources.get("gpu"):
         gpu = resources["gpu"]
@@ -83,7 +86,9 @@ def resolve_allocation(job, resources):
             "gb48": 48000,
         }
 
-        needed_mb = vram_map.get(job.get("gpuMemoryTier"), 2000)
+        # The manifest carries gpu_vram_mb; gpuMemoryTier is the raw backend
+        # field and is only present when a raw job dict is passed in.
+        needed_mb = job.get("gpu_vram_mb") or vram_map.get(job.get("gpuMemoryTier"), 2000)
         if gpu["vram_total_mb"] + 64 >= needed_mb:
             print("[DEBUG] needed_mb =", needed_mb)
             print("[DEBUG] threshold  =", needed_mb + GPU_VRAM_HEADROOM_MB)
@@ -103,7 +108,11 @@ def is_viable(allocation, job):
     if allocation["ram_gb"] < MIN_VIABLE_RAM_GB:
         return False, "Not enough RAM available right now"
     
-    gpu_required = job.get("gpuMemoryTier") is not None
+    # The job dict here is the normalised manifest built in agent.py, which
+    # exposes "gpu_required" — "gpuMemoryTier" is the raw backend field and is
+    # never present, so this check used to be dead and a GPU job landing on a
+    # GPU-less machine failed outright instead of being deferred back to queued.
+    gpu_required = bool(job.get("gpu_required")) or job.get("gpuMemoryTier") is not None
     if gpu_required and allocation["gpu"] is None:
         return False, "GPU required but not available or insufficient VRAM"
     return True, None
@@ -199,18 +208,31 @@ def run_setup_phase(job, workspace, dep_volume_name, image):
     return True
 
 
-def build_command(job, workspace, allocation, dep_volume=None):
+def select_runtime(allocation, gvisor_available=True):
+    """
+    Pick the container runtime and describe the isolation it provides.
+
+    GPU jobs use runc because gVisor cannot pass through the NVIDIA runtime
+    (see DECISIONS.md, "gVisor vs GPU Exception"). Otherwise gVisor is used
+    when Docker actually has it registered — asking for `--runtime runsc` on a
+    host without it fails the container outright, which is what happened before
+    this check existed.
+    """
+    if allocation.get("gpu"):
+        return "runc", "GPU job — using standard runc runtime"
+    if gvisor_available:
+        return "runsc", "Using gVisor (runsc) sandbox"
+    return "runc", "gVisor unavailable — falling back to runc (weaker isolation)"
+
+
+def build_command(job, workspace, allocation, dep_volume=None, gvisor_available=True):
     config         = get_image_config(job)
     image          = config["resolved_image"]
     network        = config["network"]
     container_name = f"gridnode_job_{job['job_id']}"
 
-    if allocation.get("gpu"):
-        runtime = "runc"
-        print("  [Security] GPU job — using standard runc runtime")
-    else:
-        runtime = "runsc"
-        print("  [Security] Using gVisor (runsc) sandbox")
+    runtime, isolation_note = select_runtime(allocation, gvisor_available)
+    print(f"  [Security] {isolation_note}")
 
     cmd = [
         "docker", "run",
@@ -266,7 +288,10 @@ def build_entrypoint(job, workspace, config):
 
     if job_type == "video_render":
         # command is a validated FFmpeg string from the job manifest
-        return ["bash", "-c", job["command"]]
+        command = job.get("command")
+        if not command:
+            raise ValueError("video_render job has no command to run")
+        return ["bash", "-c", command]
 
     if job_type == "server_run":
         #?? to be looked into ----------------------------------------------
@@ -427,7 +452,7 @@ class DetachedContainerProcess:
             pass
 
 
-def run(job, workspace, allocation):
+def run(job, workspace, allocation, gvisor_available=True):
     config = get_image_config(job)
     image = config["resolved_image"]
     
@@ -445,7 +470,9 @@ def run(job, workspace, allocation):
             if not success:
                 has_deps = False
 
-        cmd, container_name = build_command(job, workspace, allocation, dep_volume if has_deps else None)
+        cmd, container_name = build_command(
+            job, workspace, allocation, dep_volume if has_deps else None, gvisor_available
+        )
         
         print(f"\n  Image   : {image}")
         print(f"  Network : {config['network']}")

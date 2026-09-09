@@ -1,9 +1,10 @@
-# This runs before anything else. It checks Python version, Docker, and optionally NVIDIA Docker. If anything fails it prints a clear fix and exits — it never silently continues.
+# This runs before anything else. It checks Python version, Docker, and optionally NVIDIA
+# Docker and gVisor. Hard requirements exit with a clear fix; optional capabilities are
+# reported back to the caller so it can adapt (see run_all_checks).
 
 import sys
 import shutil
 import subprocess
-import importlib
 
 
 def check_python_version():
@@ -97,39 +98,14 @@ def check_gvisor():
     return False
 
 
-def install_dependencies():
-    import os
-    
-    # go up one level from computeshare_agent/ to find requirements.txt
-    package_dir = os.path.dirname(__file__)
-    project_root = os.path.dirname(package_dir)
-    req_path = os.path.join(project_root, "requirements.txt")
-
-    if not os.path.exists(req_path):
-        print("SKIP (requirements.txt not found)")
-        return
-
-    print("  Installing dependencies...", end=" ")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-r", req_path, "-q"],
-        capture_output=True,
-        text=True
-    )
-
-    if result.returncode != 0:
-        print("FAIL")
-        print(f"\n  [ERROR] pip install failed:\n{result.stderr}")
-        sys.exit(1)
-
-    print("OK")
-
-
 def run_all_checks():
     print("\n=== Checking prerequisites ===\n")
     check_python_version()
-    install_dependencies()
     check_docker()
     gpu_available = check_nvidia_docker()
-    check_gvisor()
+    gvisor_available = check_gvisor()
     print("\n=== All checks passed ===\n")
-    return {"gpu_available": gpu_available}
+    return {
+        "gpu_available": gpu_available,
+        "gvisor_available": gvisor_available,
+    }
